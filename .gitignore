@@ -44,7 +44,8 @@ a.o
 *.i*86
 *.x86_64
 *.hex
-
+main_parallel
+main_serial
 # Debug files
 *.dSYM/
 *.su
