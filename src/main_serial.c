@@ -3,9 +3,9 @@
 #include <math.h>
 #include <time.h>
 
-double *conjugate_gradient(double A[], double b[], double x0[], int n, int max_iter, double tol);
+void conjugate_gradient(double *A, double *b, double *x0, double *r, double *p, double *Ap, int n, int max_iter, double tol);
 
-double *generate_symmetric_positive_definite_matrix(int n);
+void generate_symmetric_positive_definite_matrix(int n);
 
 int main(int argc, char *argv[])
 {
@@ -28,12 +28,20 @@ int main(int argc, char *argv[])
     x0[0] = 2;
     x0[1] = 1;
 
+    // initialize r, p, Ap
+    double *r = (double *)malloc(n * sizeof(double));
+    double *p = (double *)malloc(n * sizeof(double));
+    double *Ap = (double *)malloc(n * sizeof(double));
+
+    // Parameters for Conjugate Gradient
     int max_iter = 1000;
     double tol = 1e-10;
 
     start_time = time(NULL);
-    double *x = conjugate_gradient(A, b, x0, n, max_iter, tol);
+    conjugate_gradient(A, b, x0, r, p, Ap, n, max_iter, tol);
     end_time = (time(NULL) - start_time);
+
+    double *x = x0;
 
     printf("Solution: ");
     for (int i = 0; i < n; i++)
@@ -49,18 +57,13 @@ int main(int argc, char *argv[])
     return 0;
 }
 
-double *generate_symmetric_positive_definite_matrix(int n)
+void generate_symmetric_positive_definite_matrix(int n)
 {
     // TODO : Implement matrix generation if needed
-    return NULL;
 }
 
-double *conjugate_gradient(double A[], double b[], double x0[], int n, int max_iter, double tol)
+void conjugate_gradient(double *A, double *b, double *x0, double *r, double *p, double *Ap, int n, int max_iter, double tol)
 {
-    // allocate contiguous memory block for r, p and Ap
-    double *r = (double *)malloc(n * sizeof(double));
-    double *p = (double *)malloc(n * sizeof(double));
-    double *Ap = (double *)malloc(n * sizeof(double));
     double alpha, beta, rsold, rsnew;
 
     // r0 = b - A * x0
@@ -143,10 +146,4 @@ double *conjugate_gradient(double A[], double b[], double x0[], int n, int max_i
 
         rsold = rsnew;
     }
-
-    free(r);
-    free(p);
-    free(Ap);
-
-    return x0;
 }
