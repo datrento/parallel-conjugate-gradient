@@ -2,11 +2,11 @@
 .vscode/
 src/__pycache__/
 *.pyc
-/src/.ipynb_checkpoints
+src/.ipynb_checkpoints
 .DS_Store
 # Compiled Object files
-./src/*.o
-./src/*.out
+src/*.o
+src/*.out
 
 # Object files
 *.o
