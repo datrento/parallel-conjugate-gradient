@@ -4,6 +4,10 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints
 .DS_Store
+# Compiled Object files
+./src/*.o
+./src/*.out
+
 
 # Prerequisites
 *.d
