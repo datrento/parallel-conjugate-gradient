@@ -3,28 +3,19 @@
 #include <math.h>
 #include <time.h>
 #include <mpi.h>
+#include "utils.h"
 
 void conjugate_gradient(double *A_local, double *b_local, double *x_local, double *x0,
                         double *r_local, double *p_local, double *Ap_local, double *p,
                         int n_local, int n, int max_iter, double tol,
                         MPI_Comm comm);
 
-void generate_symmetric_positive_definite_matrix(int n);
-
 int main(int argc, char *argv[])
 {
-    int n = 2;
+    // Timing
     double start_time = 0.0, end_time = 0.0;
-    double *A = NULL;
-    double *b = NULL;
-    double *x0 = NULL;
-    double *r_local = NULL;
-    double *p_local = NULL;
-    double *Ap_local = NULL;
-    double *p = NULL;
-    double *A_local = NULL;
-    double *b_local = NULL;
-    double *x_local = NULL;
+
+    // MPI
     MPI_Comm comm = MPI_COMM_WORLD;
     int rank, size;
 
@@ -32,6 +23,12 @@ int main(int argc, char *argv[])
     MPI_Comm_rank(comm, &rank);
     MPI_Comm_size(comm, &size);
 
+    // Parameters for Conjugate Gradient
+    int n = 16;          // Size of the matrix (n x n)
+    int max_iter = 1000; // Maximum number of iterations
+    double tol = 1e-8;   // Tolerance for convergence
+
+    // Check if n is divisible by size
     if (n % size != 0)
     {
         if (rank == 0)
@@ -40,6 +37,18 @@ int main(int argc, char *argv[])
     }
 
     int n_local = n / size; // Number of rows per process (assuming n is divisible by size) of A
+
+    // Pointer declarations(set to NULL for safety)
+    double *A = NULL;
+    double *b = NULL;
+    double *x0 = NULL;
+    double *p = NULL; // Global search direction vector
+    double *p_local = NULL;
+    double *r_local = NULL;
+    double *Ap_local = NULL;
+    double *A_local = NULL;
+    double *b_local = NULL;
+    double *x_local = NULL;
 
     // Allocate main local portions
     A_local = (double *)malloc(n_local * n * sizeof(double));
@@ -52,28 +61,16 @@ int main(int argc, char *argv[])
         b = (double *)malloc(n * sizeof(double));
         x0 = (double *)malloc(n * sizeof(double));
         // initialize A
-        A[0 * n + 0] = 4;
-        A[0 * n + 1] = 1;
-        A[1 * n + 0] = 1;
-        A[1 * n + 1] = 3;
+        generate_symmetric_positive_definite_matrix(A, n);
 
-        // initialize b
-        b[0] = 1;
-        b[1] = 2;
-
-        // initialize x0
-        x0[0] = 2;
-        x0[1] = 1;
+        // initialize b and x0 (set to zero vector)
+        get_corresponding_b_and_x0(A, b, x0, n);
     }
     else
     {
         // Allocate local portions for other processes
         x0 = (double *)malloc(n * sizeof(double)); // TODO: optimize this
     }
-
-    // Parameters for Conjugate Gradient
-    int max_iter = 1000;
-    double tol = 1e-10;
 
     // Distribute A and b to all processes
     MPI_Scatter(A, n_local * n, MPI_DOUBLE, A_local, n_local * n, MPI_DOUBLE, 0, comm);
@@ -135,21 +132,16 @@ int main(int argc, char *argv[])
     free(b);
     free(x0);
     free(x);
+    free(p);
     free(r_local);
     free(p_local);
     free(Ap_local);
-    free(p);
     free(A_local);
     free(b_local);
     free(x_local);
 
     MPI_Finalize();
     return 0;
-}
-
-void generate_symmetric_positive_definite_matrix(int n)
-{
-    // TODO: Implement matrix generation for the A, which is by definition symmetric positive definite.
 }
 
 void conjugate_gradient(
@@ -205,8 +197,11 @@ void conjugate_gradient(
     {
         rsold += r_local[i] * r_local[i];
     }
+
     // Reduce rsold across all processes and store in rsold to save memory
     MPI_Allreduce(MPI_IN_PLACE, &rsold, 1, MPI_DOUBLE, MPI_SUM, comm);
+
+    double rs0 = rsold; // save initial ||r0||^2 for relative test
 
     for (int iter = 0; iter < max_iter; iter++)
     {
@@ -260,8 +255,8 @@ void conjugate_gradient(
 
         MPI_Allreduce(MPI_IN_PLACE, &rsnew, 1, MPI_DOUBLE, MPI_SUM, comm);
 
-        // Check convergence
-        if (sqrt(rsnew) < tol)
+        // Check convergence using relative residual to r0
+        if (sqrt(rsnew / rs0) < tol)
         {
             break;
         }
