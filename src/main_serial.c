@@ -2,31 +2,23 @@
 #include <stdlib.h>
 #include <math.h>
 #include <time.h>
+#include "utils.h"
 
 void conjugate_gradient(double *A, double *b, double *x0, double *r, double *p, double *Ap, int n, int max_iter, double tol);
 
-void generate_symmetric_positive_definite_matrix(int n);
-
 int main(int argc, char *argv[])
 {
-    int n = 2;
+    int n = 10;
     double start_time = 0.0, end_time = 0.0;
     double *A = (double *)malloc(n * n * sizeof(double));
-
-    // allocate and initialize A
-    A[0 * n + 0] = 4;
-    A[0 * n + 1] = 1;
-    A[1 * n + 0] = 1;
-    A[1 * n + 1] = 3;
-
     double *b = (double *)malloc(n * sizeof(double));
-    // allocate and initialize b
-    b[0] = 1;
-    b[1] = 2;
-
     double *x0 = (double *)malloc(n * sizeof(double));
-    x0[0] = 2;
-    x0[1] = 1;
+
+    // generate A for given n
+    generate_symmetric_positive_definite_matrix(A, n);
+
+    // generate corresponding b for given A for a known solution x and initialize x0 to 0 vector
+    get_corresponding_b_and_x0(A, b, x0, n);
 
     // initialize r, p, Ap
     double *r = (double *)malloc(n * sizeof(double));
@@ -55,11 +47,6 @@ int main(int argc, char *argv[])
     free(b);
     free(x0);
     return 0;
-}
-
-void generate_symmetric_positive_definite_matrix(int n)
-{
-    // TODO : Implement matrix generation if needed
 }
 
 void conjugate_gradient(double *A, double *b, double *x0, double *r, double *p, double *Ap, int n, int max_iter, double tol)
