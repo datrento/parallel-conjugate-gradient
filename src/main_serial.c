@@ -4,11 +4,11 @@
 #include <time.h>
 #include "utils.h"
 
-void conjugate_gradient(double *A, double *b, double *x0, double *r, double *p, double *Ap, int n, int max_iter, double tol);
+void jacobi_pre_conditioned_conjugate_gradient(double *A, double *b, double *x0, double *r, double *p, double *z, double *Ap, int n, int max_iter, double tol);
 
 int main(int argc, char *argv[])
 {
-    int n = 10;
+    int n = 2;
     double start_time = 0.0, end_time = 0.0;
     double *A = (double *)malloc(n * n * sizeof(double));
     double *b = (double *)malloc(n * sizeof(double));
@@ -24,21 +24,20 @@ int main(int argc, char *argv[])
     double *r = (double *)malloc(n * sizeof(double));
     double *p = (double *)malloc(n * sizeof(double));
     double *Ap = (double *)malloc(n * sizeof(double));
+    double *z = (double *)malloc(n * sizeof(double));
 
     // Parameters for Conjugate Gradient
     int max_iter = 1000;
     double tol = 1e-10;
 
     start_time = time(NULL);
-    conjugate_gradient(A, b, x0, r, p, Ap, n, max_iter, tol);
+    jacobi_pre_conditioned_conjugate_gradient(A, b, x0, r, p, z, Ap, n, max_iter, tol);
     end_time = (time(NULL) - start_time);
-
-    double *x = x0;
 
     printf("Solution: ");
     for (int i = 0; i < n; i++)
     {
-        printf("%f ", x[i]);
+        printf("%f ", x0[i]);
     }
     printf("\n");
 
@@ -46,12 +45,16 @@ int main(int argc, char *argv[])
     free(A);
     free(b);
     free(x0);
+    free(r);
+    free(p);
+    free(Ap);
+    free(z);
     return 0;
 }
 
-void conjugate_gradient(double *A, double *b, double *x0, double *r, double *p, double *Ap, int n, int max_iter, double tol)
+void jacobi_pre_conditioned_conjugate_gradient(double *A, double *b, double *x0, double *r, double *p, double *z, double *Ap, int n, int max_iter, double tol)
 {
-    double alpha, beta, rsold, rsnew;
+    double alpha, beta, rsn0, rsnnew, rtzold, rtznew;
 
     // r0 = b - A * x0
     for (int i = 0; i < n; i++)
@@ -63,74 +66,99 @@ void conjugate_gradient(double *A, double *b, double *x0, double *r, double *p, 
         }
 
         r[i] = b[i] - Ax0_i;
-        p[i] = r[i];
     }
 
-    // rsold = r0' * r0
-    rsold = 0.0;
+    // z0 = M^-1 * r0 (Jacobi preconditioner) M^-1 = diag(A)^-1
+    // p0 = z0
     for (int i = 0; i < n; i++)
     {
-        rsold += r[i] * r[i];
+        z[i] = r[i] / A[i * n + i];
+        p[i] = z[i];
     }
 
-    for (int iter = 0; iter < max_iter; iter++)
+    // Compute initial residual norm
+    rsn0 = 0.0;
+    for (int i = 0; i < n; i++)
+    {
+        rsn0 += r[i] * r[i];
+    }
+
+    // rtz0 = r^T * z
+    rtzold = 0.0;
+    for (int i = 0; i < n; i++)
+    {
+        rtzold += r[i] * z[i];
+    }
+
+    // Main iteration loop
+    for (int k = 0; k < max_iter; k++)
     {
         // Ap = A * p
         for (int i = 0; i < n; i++)
         {
             Ap[i] = 0.0;
-
             for (int j = 0; j < n; j++)
             {
                 Ap[i] += A[i * n + j] * p[j];
             }
         }
 
-        // alpha = rsold / (p' * Ap)
+        // alpha = rtz / (p^T * Ap)
         double pAp = 0.0;
-
         for (int i = 0; i < n; i++)
         {
             pAp += p[i] * Ap[i];
         }
 
-        alpha = rsold / pAp;
+        alpha = rtzold / pAp;
 
-        // x = x + alpha * p
-        // Update x0 in place
+        // xk+1 = xk + alpha * pk
         for (int i = 0; i < n; i++)
         {
             x0[i] += alpha * p[i];
         }
 
-        // r = r - alpha * Ap
+        // rk+1 = rk - alpha * Apk
         for (int i = 0; i < n; i++)
         {
             r[i] -= alpha * Ap[i];
         }
 
-        // rsnew = r' * r
-        rsnew = 0.0;
+        // rsnnew = r^T * r
+        rsnnew = 0.0;
         for (int i = 0; i < n; i++)
         {
-            rsnew += r[i] * r[i];
+            rsnnew += r[i] * r[i];
         }
 
-        // Check convergence
-        if (sqrt(rsnew) < tol)
+        // Check for convergence
+        if (sqrt(rsnnew) < tol * sqrt(rsn0))
         {
             break;
         }
 
-        // beta = rsnew / rsold
-        beta = rsnew / rsold;
-
-        // p = r + beta * p
+        // zk+1 = M^-1 * rk+1
         for (int i = 0; i < n; i++)
         {
-            p[i] = r[i] + beta * p[i];
+            z[i] = r[i] / A[i * n + i];
         }
 
-        rsold = rsnew;
+        // rtznew = r^T * z
+        rtznew = 0.0;
+        for (int i = 0; i < n; i++)
+        {
+            rtznew += r[i] * z[i];
+        }
+
+        // beta = rtznew / rtzold
+        beta = rtznew / rtzold;
+
+        // pk+1 = zk+1 + beta * pk
+        for (int i = 0; i < n; i++)
+        {
+            p[i] = z[i] + beta * p[i];
+        }
+
+        rtzold = rtznew;
     }
 }
