@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include <time.h>
 #include <mpi.h>
 #include "utils.h"
 
@@ -13,7 +12,7 @@ void conjugate_gradient(double *A_local, double *b_local, double *x_local, doubl
 int main(int argc, char *argv[])
 {
     // Timing
-    double start_time = 0.0, end_time = 0.0;
+    double start_time = 0.0, end_time = 0.0, sol = 1.0;
 
     // MPI
     MPI_Comm comm = MPI_COMM_WORLD;
@@ -24,7 +23,7 @@ int main(int argc, char *argv[])
     MPI_Comm_size(comm, &size);
 
     // Parameters for Conjugate Gradient
-    int n = 16;          // Size of the matrix (n x n)
+    int n = 10000;       // Size of the matrix (n x n)
     int max_iter = 1000; // Maximum number of iterations
     double tol = 1e-8;   // Tolerance for convergence
 
@@ -113,7 +112,13 @@ int main(int argc, char *argv[])
         printf("Solution: ");
         for (int i = 0; i < n; i++)
         {
-            printf("%f ", x[i]);
+            if (round(x[i]) != sol)
+            {
+                printf("Error at index %d: Expected %f, Got %f\n", i, sol, x[i]);
+                break;
+            }
+            else if (i == n - 1)
+                printf("The solution values are correct.\n");
         }
         printf("\n");
     }
