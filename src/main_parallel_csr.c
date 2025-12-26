@@ -43,7 +43,6 @@ int main(int argc, char *argv[])
     int row_start = rank * base + (rank < remainder ? rank : remainder);
 
     // Pointers for glocal matrix and vectors
-    double *b = NULL;
     double *x0 = NULL;
     double *p = NULL;
     double *Ap = NULL;
@@ -93,6 +92,10 @@ int main(int argc, char *argv[])
             MPI_Abort(comm, EXIT_FAILURE);
         }
 
+        // export csr matrix to mtx for verification of SPD properties before freeing
+        if (export_csr > 0)
+            export_csr_to_mtx(mtx_filename, &A_full, n, rank);
+
         // free the full matrix in CSR format on rank 0
         csr_free(&A_full);
 
@@ -101,10 +104,6 @@ int main(int argc, char *argv[])
         {
             x0[i] = initial_guess; // initial guess x0 as zero vector
         }
-
-        // export csr matrix to mtx for verification of SPD properties
-        if (export_csr > 0)
-            export_csr_to_mtx(mtx_filename, &A_local, n, rank);
     }
     else
     {
@@ -123,11 +122,11 @@ int main(int argc, char *argv[])
     // Build b = A * x_known where x_known is a vector of specific values (e.g., all 2.0)
     double *x_known = (double *)malloc(n * sizeof(double));
 
-    if (rank == 0)
-        for (int i = 0; i < n; i++)
-        {
-            x_known[i] = 2.0;
-        }
+    // initialize x_known to all ranks
+    for (int i = 0; i < n; i++)
+    {
+        x_known[i] = 2.0;
+    }
 
     // b = A * x_known using local sparse matvec multiplication each process computes its local part
     // and stores in b_local
