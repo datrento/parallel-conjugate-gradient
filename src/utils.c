@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include "utils.h"
 #include <stdio.h>
+#include <stddef.h>
 
 void compute_speedup_and_efficiency(
     const double *times,
