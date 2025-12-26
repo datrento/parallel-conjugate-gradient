@@ -75,7 +75,7 @@ void generate_symmetric_positive_definite_dense_matrix(double *A, int grid_size)
 void get_corresponding_b_and_x0(double *A, double *b, double *x0, int n)
 {
     /***
-     * Given a matrix A, this function generates a corresponding vector b
+     * Given a dense matrix A, this function generates a corresponding vector b
      * for a known solution x_known (which is a vector of ones) and initializes x0 to a zero vector.
      *
      * Parameters:
