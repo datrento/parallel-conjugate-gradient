@@ -2,7 +2,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <mpi.h>
-#include <omp.h>
+// #include <omp.h>
+#include <stddef.h>
 
 void csr_get_diagonal_local(const CSR *A_local, double *diag_A_local, int rank)
 {
