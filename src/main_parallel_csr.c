@@ -37,7 +37,7 @@ int main(int argc, char *argv[])
     int remainder = n % size;
 
     // flag to export csr matrix from rank 0 for verification of SPD properties
-    int export_csr = 1;
+    int export_csr = 0;
 
     // Optimization parameters for Conjugate Gradient
     int max_iter = 1000;
