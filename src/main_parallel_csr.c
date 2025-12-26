@@ -4,6 +4,11 @@
 #include <math.h>
 #include <mpi.h>
 #include "csr.h"
+// TODO: pbs script for larger runs
+// TODO: profiling and performance analysis
+// TODO: add omp parallelization within each MPI process for local computations
+// TODO: profile and performance analysis again
+// TODO: start writing the report
 
 void verify_solution(CSR *A_local, double *x, double *b_local, double *Ap_local, int n_local, int rank, MPI_Comm comm);
 void jacobi_preconditioner_z(double *diag_A, double *r, double *z, int n, int rank);
@@ -56,11 +61,32 @@ int main(int argc, char *argv[])
     double *Ap_local = (double *)malloc(n_local * sizeof(double));
     double *r_local = (double *)malloc(n_local * sizeof(double));
 
+    if (!diag_A_local || !b_local || !x_local || !p_local || !z_local || !Ap_local || !r_local)
+    {
+        fprintf(stderr, "[rank %d] Error allocating local vectors(diag_A_local, b_local, x_local, p_local, z_local, Ap_local, r_local) of size %d\n", rank, n_local);
+        fflush(stderr);
+        MPI_Abort(comm, EXIT_FAILURE);
+    }
+
     // Allocate global vectors in each process
     p = (double *)malloc(n * sizeof(double)); // global p vector for Allgather
 
+    if (!p)
+    {
+        fprintf(stderr, "[rank %d] Error allocating global vector p of size %d\n", rank, n);
+        fflush(stderr);
+        MPI_Abort(comm, EXIT_FAILURE);
+    }
+
     // Allocate x0 in each process (initial guess)
     x0 = (double *)malloc(n * sizeof(double));
+
+    if (!x0)
+    {
+        fprintf(stderr, "[rank %d] Error allocating global vector x0 of size %d\n", rank, n);
+        fflush(stderr);
+        MPI_Abort(comm, EXIT_FAILURE);
+    }
 
     // Local CSR matrix in each process
     CSR A_local;
@@ -74,7 +100,7 @@ int main(int argc, char *argv[])
 
         CSR A_full;
 
-        if (csr_build_spd_full(&A_full, grid_size) != 0)
+        if (csr_build_spd_full(&A_full, grid_size, rank) != 0)
         {
             fprintf(stderr, "[rank 0] Building full CSR matrix on rank 0\n");
             fflush(stderr);
@@ -122,6 +148,13 @@ int main(int argc, char *argv[])
     // Build b = A * x_known where x_known is a vector of specific values (e.g., all 2.0)
     double *x_known = (double *)malloc(n * sizeof(double));
 
+    if (!x_known)
+    {
+        fprintf(stderr, "[rank %d] Error allocating x_known of size %d\n", rank, n);
+        fflush(stderr);
+        MPI_Abort(comm, EXIT_FAILURE);
+    }
+
     // initialize x_known to all ranks
     for (int i = 0; i < n; i++)
     {
@@ -146,6 +179,13 @@ int main(int argc, char *argv[])
     int *recvcounts = (int *)malloc(size * sizeof(int));
     int *displs = (int *)malloc(size * sizeof(int));
 
+    if (!recvcounts || !displs)
+    {
+        fprintf(stderr, "[rank %d] Error allocating memory for recvcounts or displs\n", rank);
+        fflush(stderr);
+        MPI_Abort(comm, EXIT_FAILURE);
+    }
+
     // Rank order preserved while gathering n_local from all ranks
     MPI_Allgather(&n_local, 1, MPI_INT, recvcounts, 1, MPI_INT, comm);
 
@@ -165,34 +205,38 @@ int main(int argc, char *argv[])
     }
 
     // Timing
-    double start_time = 0.0, end_time = 0.0;
+    double local_time = 0.0;
 
     MPI_Barrier(comm); // synchronize before timing
 
     // Solve Ax = b using Jacobi Preconditioned Conjugate Gradient method
-    start_time = MPI_Wtime();
+    local_time = MPI_Wtime();
     jacobi_preconditioned_conjugate_gradient(
         &A_local, diag_A_local, b_local, x0,
         x_local, r_local, p, p_local,
         z_local, Ap_local, n_local, n,
         recvcounts, displs,
         max_iter, tol, rank, comm);
-    end_time = MPI_Wtime() - start_time;
+    local_time = MPI_Wtime() - local_time;
 
     //  Gather the local x (solution) to x0 in all processes
     MPI_Allgatherv(x_local, n_local, MPI_DOUBLE, x0, recvcounts, displs, MPI_DOUBLE, comm);
 
+    // the minimum and maximum time taken among all processes
     double min_time = 0.0, max_time = 0.0;
-    MPI_Reduce(&end_time, &max_time, 1, MPI_DOUBLE, MPI_MAX, 0, comm);
-    MPI_Reduce(&end_time, &min_time, 1, MPI_DOUBLE, MPI_MIN, 0, comm);
+    MPI_Reduce(&local_time, &max_time, 1, MPI_DOUBLE, MPI_MAX, 0, comm);
+    MPI_Reduce(&local_time, &min_time, 1, MPI_DOUBLE, MPI_MIN, 0, comm);
 
     // Verification the solutions
     verify_solution(&A_local, x0, b_local, Ap_local, n_local, rank, comm);
 
     if (rank == 0)
     {
-        printf("[rank %d]Time taken for Jacobi Preconditioned Conjugate Gradient: min %.6f s, max %.6f s\n",
-               rank, min_time, max_time);
+        printf("[rank %d]Wall-clock time taken for Jacobi Preconditioned Conjugate Gradient: max %.6f s\n",
+               rank, max_time);
+        printf("[rank %d]Wall-clock time taken for Jacobi Preconditioned Conjugate Gradient: min %.6f s\n",
+               rank, min_time);
+        fflush(stdout);
     }
 
     // Common frees (all ranks)

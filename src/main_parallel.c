@@ -5,17 +5,17 @@
 #include <math.h>
 #include <mpi.h>
 
-void jacobi_preconditioner_z(double *diag_A, double *r, double *z, int n);
+void jacobi_preconditioner_z(double *diag_A, double *r, double *z, int n, int rank);
 void jacobi_preconditioned_conjugate_gradient(
     double *A_local, double *diag_A_local, double *b_local, double *x0,
     double *x_local, double *r_local, double *p, double *p_local,
     double *z_local, double *Ap_local, int n_local, int n,
-    int *recvcounts, int *displs,
+    int *recvcounts, int *displs, int rank,
     int max_iter, double tol, MPI_Comm comm);
-void get_diagonal_elements(double *A, double *diag_A, int n_local, int start_row, int n);
+void get_diagonal_elements(double *A, double *diag_A, int n_local, int start_row, int n, int rank);
 void vec_mat_mult_global(double *A, double *x, double *Ax, int n);
 void vec_mat_mult_local(double *A_local, const double *x, double *Ax_local, int n_local, int n);
-void verify_solution(double *A, double *Ax, double *x, double *b, int n);
+void verify_solution(double *A, double *Ax, double *x, double *b, int n, int rank);
 
 int main(int argc, char *argv[])
 {
@@ -41,7 +41,7 @@ int main(int argc, char *argv[])
     double *b = NULL;
     double *x0 = NULL;
     double *p = NULL;
-    double *Ap = NULL;
+    double *Ax = NULL;
 
     // Allocate local vectors and matrix
     double *A_local = (double *)malloc(n_local * n * sizeof(double));
@@ -52,10 +52,32 @@ int main(int argc, char *argv[])
     double *z_local = (double *)malloc(n_local * sizeof(double));
     double *Ap_local = (double *)malloc(n_local * sizeof(double));
     double *r_local = (double *)malloc(n_local * sizeof(double));
+
+    if (!A_local || !diag_A_local || !b_local || !x_local || !p_local || !z_local || !Ap_local || !r_local)
+    {
+        fprintf(stderr, "[rank %d] Error allocating local vectors(diag_A_local, b_local, x_local, p_local, z_local, Ap_local, r_local) or matrix of size %d\n", rank, n_local);
+        fflush(stderr);
+        MPI_Abort(comm, EXIT_FAILURE);
+    }
+
     p = (double *)malloc(n * sizeof(double)); // global p vector for Allgather
+
+    if (!p)
+    {
+        fprintf(stderr, "[rank %d] Error allocating global vector p of size %d\n", rank, n);
+        fflush(stderr);
+        MPI_Abort(comm, EXIT_FAILURE);
+    }
 
     // Allocate x0 in all processes
     x0 = (double *)malloc(n * sizeof(double));
+
+    if (!x0)
+    {
+        fprintf(stderr, "[rank %d] Error allocating global vector x0 of size %d\n", rank, n);
+        fflush(stderr);
+        MPI_Abort(comm, EXIT_FAILURE);
+    }
 
     // distribution arrays for Scatterv
     int *sendcounts_A = NULL;
@@ -67,10 +89,17 @@ int main(int argc, char *argv[])
     {
         int need_spd_check = 1; // flag to export matrix for verification
 
-        printf("Grid size: %d\n", grid_size);
-        printf("Matrix size: %d x %d\n", n, n);
+        printf("[rank %d]Grid size: %d\n", rank, grid_size);
+        printf("[rank %d]Matrix size: %d x %d\n", rank, n, n);
 
         A = (double *)malloc(n * n * sizeof(double));
+
+        if (!A)
+        {
+            fprintf(stderr, "[rank %d] Error allocating global matrix A of size %d x %d\n", rank, n, n);
+            fflush(stderr);
+            MPI_Abort(comm, EXIT_FAILURE);
+        }
         // generate dense A for given n
         generate_symmetric_positive_definite_dense_matrix(A, grid_size);
 
@@ -84,6 +113,13 @@ int main(int argc, char *argv[])
         // allocate b
         b = (double *)malloc(n * sizeof(double));
 
+        if (!b)
+        {
+            fprintf(stderr, "[rank %d] Error allocating global vector b of size %d\n", rank, n);
+            fflush(stderr);
+            MPI_Abort(comm, EXIT_FAILURE);
+        }
+
         // generate corresponding b for given A for a known solution x and initialize x0 to 0 vector
         get_corresponding_b_and_x0(A, b, x0, n);
 
@@ -92,6 +128,13 @@ int main(int argc, char *argv[])
         displs_A = (int *)malloc(size * sizeof(int));
         sendcounts_b = (int *)malloc(size * sizeof(int));
         displs_b = (int *)malloc(size * sizeof(int));
+
+        if (!sendcounts_A || !displs_A || !sendcounts_b || !displs_b)
+        {
+            fprintf(stderr, "[rank %d] Error allocating sendcounts or displs arrays for Scatterv\n", rank);
+            fflush(stderr);
+            MPI_Abort(comm, EXIT_FAILURE);
+        }
 
         for (int i = 0; i < size; i++)
         {
@@ -109,9 +152,17 @@ int main(int argc, char *argv[])
     // Scatter A and b to all processes
     MPI_Scatterv(A, sendcounts_A, displs_A, MPI_DOUBLE, A_local, n_local * n, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     MPI_Scatterv(b, sendcounts_b, displs_b, MPI_DOUBLE, b_local, n_local, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    if (rank == 0)
+    {
+        free(A);
+        free(sendcounts_A);
+        free(displs_A);
+        free(sendcounts_b);
+        free(displs_b);
+    }
 
     // get diagonal elements of A per process
-    get_diagonal_elements(A_local, diag_A_local, n_local, row_start, n);
+    get_diagonal_elements(A_local, diag_A_local, n_local, row_start, n, rank);
 
     // initialize local x from x0
     for (int i = 0; i < n_local; i++)
@@ -122,6 +173,13 @@ int main(int argc, char *argv[])
     // Precompute recvcounts and displs for variable-lenghth gatherv
     int *recvcounts = (int *)malloc(size * sizeof(int));
     int *displs = (int *)malloc(size * sizeof(int));
+
+    if (!recvcounts || !displs)
+    {
+        fprintf(stderr, "[rank %d] Error allocating memory for recvcounts or displs\n", rank);
+        fflush(stderr);
+        MPI_Abort(comm, EXIT_FAILURE);
+    }
 
     MPI_Allgather(&n_local, 1, MPI_INT, recvcounts, 1, MPI_INT, MPI_COMM_WORLD);
 
@@ -143,7 +201,7 @@ int main(int argc, char *argv[])
         A_local, diag_A_local, b_local, x0,
         x_local, r_local, p, p_local,
         z_local, Ap_local, n_local, n,
-        recvcounts, displs,
+        recvcounts, displs, rank,
         max_iter, tol, comm);
     end_time = MPI_Wtime() - start_time;
 
@@ -157,22 +215,24 @@ int main(int argc, char *argv[])
     // Allocate Ap in root for verification
     if (rank == 0)
     {
-        Ap = (double *)malloc(n * sizeof(double));
-        // Reuse Ap for verification (will be overwritten inside verify_solution)
-        verify_solution(A, Ap, x0, b, n);
-        printf("Maximum Time taken among processes: %lf seconds\n", max_time);
-        printf("Minimum Time taken among processes: %lf seconds\n", min_time);
+        Ax = (double *)malloc(n * sizeof(double));
+
+        if (!Ax)
+        {
+            fprintf(stderr, "[rank %d] Error allocating global vector Ap of size %d for verification\n", rank, n);
+            fflush(stderr);
+            MPI_Abort(comm, EXIT_FAILURE);
+        }
+        // Reuse Ax for verification (will be overwritten inside verify_solution)
+        verify_solution(A, Ax, x0, b, n, rank);
+        printf("[rank %d] Maximum Time taken among processes: %lf seconds\n", rank, max_time);
+        printf("[rank %d] Minimum Time taken among processes: %lf seconds\n", rank, min_time);
     }
 
     if (rank == 0)
     {
-        free(A);
         free(b);
-        free(sendcounts_A);
-        free(displs_A);
-        free(sendcounts_b);
-        free(displs_b);
-        free(Ap);
+        free(Ax);
     }
 
     // Common frees (all ranks)
@@ -219,6 +279,17 @@ void vec_mat_mult_local(double *A_local, const double *x, double *Ax_local, int 
 // global matrix-vector multiplication
 void vec_mat_mult_global(double *A, double *x, double *Ax, int n)
 {
+    /**
+     * Multiplies global dense matrix A with vector x to produce result Ax.
+     * Parameters:
+     *    A : Global dense matrix A (size: n x n, stored row-major)
+     *    x : Input vector x (size: n)
+     *    Ax: Output vector Ax (size: n)
+     *    n : Size of the matrix and vectors
+     *
+     * Returns:
+     *    None (Ax is updated in place)
+     **/
     for (int i = 0; i < n; i++)
     {
         Ax[i] = 0.0;
@@ -229,7 +300,7 @@ void vec_mat_mult_global(double *A, double *x, double *Ax, int n)
     }
 }
 
-void get_diagonal_elements(double *A_local, double *diag_A_local, int n_local, int start_row, int n)
+void get_diagonal_elements(double *A_local, double *diag_A_local, int n_local, int start_row, int n, int rank)
 {
     /**
      * Extracts the diagonal elements from the local dense matrix A_local.
@@ -248,26 +319,31 @@ void get_diagonal_elements(double *A_local, double *diag_A_local, int n_local, i
 
         if (diag_A_local[i] == 0)
         {
-            fprintf(stderr, "Error: Zero diagonal element at global row %d.\n", global_row);
-            exit(EXIT_FAILURE);
+            fprintf(stderr, "[rank %d] Error: Zero diagonal element at global row %d.\n", rank, global_row);
+            fflush(stderr);
+            MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
         }
     }
 }
-void jacobi_preconditioner_z(double *diag_A, double *r, double *z, int n)
+void jacobi_preconditioner_z(double *diag_A, double *r, double *z, int n, int rank)
 {
+    /***
+     * Jacobi preconditioner: z = M^-1 * r where M = diag(A) => z = diag(A)^-1 * r
+     ***/
     for (int i = 0; i < n; i++)
     {
         if (diag_A[i] == 0.0)
         {
             fprintf(stderr, "Error: Diagonal element diag_A[%d] is zero.\n", i);
-            exit(EXIT_FAILURE);
+            fflush(stderr);
+            MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
         }
 
         z[i] = r[i] / diag_A[i];
     }
 }
 
-void verify_solution(double *A, double *Ax, double *x, double *b, int n)
+void verify_solution(double *A, double *Ax, double *x, double *b, int n, int rank)
 {
     /***
      * Verifies the solution by computing Ax and comparing it to b.
@@ -275,19 +351,21 @@ void verify_solution(double *A, double *Ax, double *x, double *b, int n)
      ***/
     vec_mat_mult_global(A, x, Ax, n);
 
-    double error = 0.0;
+    double error = 0.0, b_norm = 0.0;
     for (int i = 0; i < n; i++)
     {
         double diff = Ax[i] - b[i];
         error += diff * diff;
+        b_norm += b[i] * b[i];
     }
     error = sqrt(error);
-    printf("Verification: ||Ax - b|| = %.6e\n", error);
+
+    printf("[rank %d] Verification: ||Ax - b|| = %.6e  and ||Ax - b|| / ||b|| (relative error) = %.6e\n", rank, error, error / sqrt(b_norm));
 
     // sample solution output
     for (int i = 0; i < 10; i++)
     {
-        printf("x[%d] = %.6e\n", i, x[i]);
+        printf("[rank %d] x[%d] = %.6e\n", rank, i, x[i]);
     }
 }
 
@@ -295,7 +373,7 @@ void jacobi_preconditioned_conjugate_gradient(
     double *A_local, double *diag_A_local, double *b_local, double *x0,
     double *x_local, double *r_local, double *p, double *p_local,
     double *z_local, double *Ap_local, int n_local, int n,
-    int *recvcounts, int *displs,
+    int *recvcounts, int *displs, int rank,
     int max_iter, double tol, MPI_Comm comm)
 {
     double alpha, beta, rsn0, rsnnew, rtzold, rtznew;
@@ -310,7 +388,7 @@ void jacobi_preconditioned_conjugate_gradient(
     }
 
     // z0 = M^-1 * r0 (Jacobi preconditioner) M^-1 = diag(A)^-1
-    jacobi_preconditioner_z(diag_A_local, r_local, z_local, n_local);
+    jacobi_preconditioner_z(diag_A_local, r_local, z_local, n_local, rank);
 
     // p0 = z0
     for (int i = 0; i < n_local; i++)
@@ -325,8 +403,6 @@ void jacobi_preconditioned_conjugate_gradient(
         rsn0 += r_local[i] * r_local[i];
     }
 
-    MPI_Allreduce(MPI_IN_PLACE, &rsn0, 1, MPI_DOUBLE, MPI_SUM, comm);
-
     // rtz0 = r0^T * z0
     rtzold = 0.0;
     for (int i = 0; i < n_local; i++)
@@ -334,7 +410,11 @@ void jacobi_preconditioned_conjugate_gradient(
         rtzold += r_local[i] * z_local[i];
     }
 
-    MPI_Allreduce(MPI_IN_PLACE, &rtzold, 1, MPI_DOUBLE, MPI_SUM, comm);
+    // Global reductions for rsn0 and rtz0 combined
+    double rsn0_rtzold_sum[2] = {rsn0, rtzold};
+    MPI_Allreduce(MPI_IN_PLACE, rsn0_rtzold_sum, 2, MPI_DOUBLE, MPI_SUM, comm);
+    rsn0 = rsn0_rtzold_sum[0];
+    rtzold = rsn0_rtzold_sum[1];
 
     // Main iteration loop
     for (int k = 0; k < max_iter; k++)
@@ -354,8 +434,9 @@ void jacobi_preconditioned_conjugate_gradient(
 
         if (pAp == 0.0)
         {
-            fprintf(stderr, "Error: Division by zero encountered in iteration %d.\n", k);
-            break; // Exit the loop to prevent division by zero
+            fprintf(stderr, "[rank %d] Error: Division by zero encountered in iteration %d.\n", rank, k);
+            fflush(stderr);
+            MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
         }
 
         // global value of alpha
@@ -373,26 +454,15 @@ void jacobi_preconditioned_conjugate_gradient(
             r_local[i] -= alpha * Ap_local[i];
         }
 
+        // zk+1 = M^-1 * rk+1 (Jacobi preconditioner)
+        jacobi_preconditioner_z(diag_A_local, r_local, z_local, n_local, rank);
+
         // rsnnew = r^T * r
         rsnnew = 0.0;
         for (int i = 0; i < n_local; i++)
         {
             rsnnew += r_local[i] * r_local[i];
         }
-
-        MPI_Allreduce(MPI_IN_PLACE, &rsnnew, 1, MPI_DOUBLE, MPI_SUM, comm);
-
-        // Check for convergence
-        // for efficiency, we use the relative convergence criterion without computing square roots
-        // ||rk+1|| < tol * ||r0||
-        if (rsnnew < (tol * tol) * rsn0)
-        {
-            fprintf(stdout, "Converged in %d iterations.\n", k + 1);
-            break;
-        }
-
-        // zk+1 = M^-1 * rk+1 (Jacobi preconditioner)
-        jacobi_preconditioner_z(diag_A_local, r_local, z_local, n_local);
 
         // rtznew = r^T * z
         rtznew = 0.0;
@@ -401,7 +471,20 @@ void jacobi_preconditioned_conjugate_gradient(
             rtznew += r_local[i] * z_local[i];
         }
 
-        MPI_Allreduce(MPI_IN_PLACE, &rtznew, 1, MPI_DOUBLE, MPI_SUM, comm);
+        // global reductions for rsnnew and rtznew combined
+        double sum[2] = {rsnnew, rtznew};
+        MPI_Allreduce(MPI_IN_PLACE, sum, 2, MPI_DOUBLE, MPI_SUM, comm);
+        rsnnew = sum[0];
+        rtznew = sum[1];
+
+        // Check for convergence
+        // for efficiency, we use the relative convergence criterion without computing square roots
+        // ||rk+1|| < tol * ||r0||
+        if (rsnnew < (tol * tol) * rsn0)
+        {
+            fprintf(stdout, "[rank %d] Converged in %d iterations.\n", rank, k + 1);
+            break;
+        }
 
         // beta = rtznew / rtzold
         beta = rtznew / rtzold;

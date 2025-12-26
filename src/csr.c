@@ -103,13 +103,23 @@ int csr_distribute(
     if (!local_row_ptr_temp)
     {
         fprintf(stderr, "[rank %d] Error allocating memory for local_row_ptr_temp\n", rank);
+        fflush(stderr);
         return -1;
     }
 
     if (rank == 0)
     {
+        // Prepare sendcounts and displs for row_ptr
         int *sendcounts = (int *)malloc(size * sizeof(int));
         int *displs = (int *)malloc(size * sizeof(int));
+
+        if (!sendcounts || !displs)
+        {
+            fprintf(stderr, "[rank %d] Error allocating memory for sendcounts or displs\n", rank);
+            fflush(stderr);
+            free(local_row_ptr_temp);
+            return -1;
+        }
 
         for (int i = 0; i < size; i++)
         {
@@ -191,6 +201,16 @@ int csr_distribute(
         int *sendcounts_nnz = (int *)malloc(size * sizeof(int));
         int *displs_nnz = (int *)malloc(size * sizeof(int));
 
+        if (!sendcounts_nnz || !displs_nnz)
+        {
+            fprintf(stderr, "[rank %d] Error allocating memory for sendcounts_nnz or displs_nnz\n", rank);
+            fflush(stderr);
+            free(A_local->row_ptr);
+            free(A_local->col_indices);
+            free(A_local->values);
+            return -1;
+        }
+
         for (int i = 0; i < size; i++)
         {
             // let say remainder = 2, base = 3, size = 5
@@ -233,7 +253,7 @@ int csr_distribute(
     return 0;
 }
 
-int csr_build_spd_full(CSR *A, int grid_size)
+int csr_build_spd_full(CSR *A, int grid_size, int rank)
 {
     /***
      * Builds a symmetric positive definite (SPD) matrix in CSR format
@@ -262,7 +282,8 @@ int csr_build_spd_full(CSR *A, int grid_size)
 
     if (!A->row_ptr)
     {
-        fprintf(stderr, "Error allocating memory for row_ptr\n");
+        fprintf(stderr, "[rank %d] Error allocating memory for row_ptr\n", rank);
+        fflush(stderr);
         return -1;
     }
 
@@ -314,7 +335,8 @@ int csr_build_spd_full(CSR *A, int grid_size)
     if (!A->col_indices || !A->values)
     {
         // log error and free previously allocated memory
-        fprintf(stderr, "Error: Memory allocation failed for col_indices or values\n");
+        fprintf(stderr, "[rank %d] Error: Memory allocation failed for col_indices or values\n", rank);
+        fflush(stderr);
         free(A->row_ptr);
         return -1;
     }

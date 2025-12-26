@@ -2,6 +2,22 @@
 #include "utils.h"
 #include <stdio.h>
 
+void compute_speedup_and_efficiency(
+    const double *times,
+    const int *procs,
+    int n_runs)
+{
+    double T1 = times[0]; // time for 1 process
+
+    printf("Processes\tTime (s)\tSpeedup\tEfficiency\n");
+    for (int i = 0; i < n_runs; i++)
+    {
+        double speedup = T1 / times[i];
+        double efficiency = speedup / procs[i];
+        printf("%d\t\t%.6f\t%.2f\t%.2f\n", procs[i], times[i], speedup, efficiency);
+    }
+}
+
 void generate_symmetric_positive_definite_dense_matrix(double *A, int grid_size)
 {
     /***
@@ -90,6 +106,12 @@ void get_corresponding_b_and_x0(double *A, double *b, double *x0, int n)
 
     // known solution vector temporarily
     double *x_known = (double *)malloc(n * sizeof(double));
+
+    if (!x_known)
+    {
+        fprintf(stderr, "Error allocating memory for known solution vector x_known of size %d\n", n);
+        return;
+    }
 
     // known solution x
     for (int i = 0; i < n; i++)
