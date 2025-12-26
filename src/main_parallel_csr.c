@@ -30,7 +30,7 @@ int main(int argc, char *argv[])
 
     MPI_Comm comm = MPI_COMM_WORLD;
     // Problem size
-    int grid_size = 240; // default grid size
+    int grid_size = 400; // default grid size
     double initial_guess = 0.0;
     int n = grid_size * grid_size * grid_size;
     int base = n / size;
@@ -96,6 +96,10 @@ int main(int argc, char *argv[])
         const char *mtx_filename = "../data/matrix_csr.mtx";
 
         printf("[rank %d]Building CRS matrix (27-point stencil) on rank 0...\n", rank);
+        printf("[rank %d]Matrix size: %d x %d\n", rank, n, n);
+        printf("[rank %d]Number of processes: %d\n", rank, size);
+        printf("[rank %d]Each process local rows: %d\n", rank, n_local);
+        printf("[rank %d] Grid size: %d x %d x %d\n", rank, grid_size, grid_size, grid_size);
         fflush(stdout);
 
         CSR A_full;
