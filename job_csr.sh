@@ -33,8 +33,8 @@ for grid in "${grid_sizes[@]}"; do
     echo "Running grid_size=$grid"
 
     # Redirect stdout and stderr to separate files per grid size
-    mpirun -np 32 ./src/main_parallel_csr $grid \
+    mpirun -n 32 ./src/main_parallel_csr $grid \
         > output_grid_${grid}.log \
-        2> error_grid_${grid}.log
+        2> error_grid_${grid}.log 
 done
 
