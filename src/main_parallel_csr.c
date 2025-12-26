@@ -31,6 +31,12 @@ int main(int argc, char *argv[])
     MPI_Comm comm = MPI_COMM_WORLD;
     // Problem size
     int grid_size = 400; // default grid size
+
+    if (argc > 1)
+    {
+        grid_size = atoi(argv[1]);
+    }
+
     double initial_guess = 0.0;
     int n = grid_size * grid_size * grid_size;
     int base = n / size;
@@ -41,6 +47,8 @@ int main(int argc, char *argv[])
 
     // Optimization parameters for Conjugate Gradient
     int max_iter = 1000;
+    if (argc > 2)
+        max_iter = atoi(argv[2]);
     double tol = 1e-10; // relative tolerance
 
     // Determine local number of rows and starting row for each process
