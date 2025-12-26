@@ -1,3 +1,4 @@
+reference_code.c
 .venv/
 .vscode/
 src/__pycache__/
@@ -7,6 +8,9 @@ src/.ipynb_checkpoints
 # Compiled Object files
 src/*.o
 src/*.out
+
+data/
+papers/
 
 # Object files
 *.o
