@@ -235,6 +235,19 @@ int csr_distribute(
 
 int csr_build_spd_full(CSR *A, int grid_size)
 {
+    /***
+     * Builds a symmetric positive definite (SPD) matrix in CSR format
+     * using a 27-point stencil for a 3D grid of size grid_size^3.
+     *
+     * Parameters:
+     *    A         : Pointer to CSR structure to be filled
+     *    grid_size : Size of the 3D grid (grid_size x grid_size x grid_size)
+     *
+     * Returns:
+     *    0 on success, -1 on failure
+     *
+     * Credits: adopted from hpcg benchmark c++ implementation https://github.com/hpcg-benchmark/hpcg and GitHub Copilot
+     ***/
     int nx = grid_size;
     int ny = grid_size;
     int nz = grid_size;
@@ -359,6 +372,9 @@ int csr_build_spd_full(CSR *A, int grid_size)
 
 void csr_free(CSR *A)
 {
+    /***
+     * Frees the memory allocated for the CSR matrix A.
+     ***/
     if (A)
     {
         if (A->row_ptr)
