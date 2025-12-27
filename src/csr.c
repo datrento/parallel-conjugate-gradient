@@ -285,6 +285,8 @@ int csr_build_spd_full(CSR *A, int grid_size, int rank)
     if (!A->row_ptr)
     {
         fprintf(stderr, "[rank %d] Error allocating memory for row_ptr\n", rank);
+        fprintf(stderr, "[rank %d] n=%d requires %.2f GB for row_ptr\n",
+                rank, n, (n + 1) * sizeof(int) / (1024.0 * 1024.0 * 1024.0));
         fflush(stderr);
         return -1;
     }
@@ -338,6 +340,12 @@ int csr_build_spd_full(CSR *A, int grid_size, int rank)
     {
         // log error and free previously allocated memory
         fprintf(stderr, "[rank %d] Error: Memory allocation failed for col_indices or values\n", rank);
+        fprintf(stderr, "[rank %d] nnz=%d requires %.2f GB for col_indices and %.2f GB for values\n",
+                rank, nnz, nnz * sizeof(int) / (1024.0 * 1024.0 * 1024.0), nnz * sizeof(double) / (1024.0 * 1024.0 * 1024.0));
+
+        // number of bytes allocated so far
+        fprintf(stderr, "[rank %d] Allocated %.2f GB for row_ptr\n",
+                rank, (n + 1) * sizeof(int) / (1024.0 * 1024.0 * 1024.0));
         fflush(stderr);
         free(A->row_ptr);
         return -1;

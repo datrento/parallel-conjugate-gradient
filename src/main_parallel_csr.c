@@ -98,26 +98,6 @@ int main(int argc, char *argv[])
         MPI_Abort(comm, EXIT_FAILURE);
     }
 
-    // Allocate global vectors in each process
-    p = (double *)malloc(n * sizeof(double)); // global p vector for Allgather
-
-    if (!p)
-    {
-        fprintf(stderr, "[rank %d] Error allocating global vector p of size %d\n", rank, n);
-        fflush(stderr);
-        MPI_Abort(comm, EXIT_FAILURE);
-    }
-
-    // Allocate x0 in each process (initial guess)
-    x0 = (double *)malloc(n * sizeof(double));
-
-    if (!x0)
-    {
-        fprintf(stderr, "[rank %d] Error allocating global vector x0 of size %d\n", rank, n);
-        fflush(stderr);
-        MPI_Abort(comm, EXIT_FAILURE);
-    }
-
     // Local CSR matrix in each process
     CSR A_local;
 
@@ -158,12 +138,6 @@ int main(int argc, char *argv[])
 
         // free the full matrix in CSR format on rank 0
         csr_free(&A_full);
-
-        // Initialize x0 and b on rank 0
-        for (int i = 0; i < n; i++)
-        {
-            x0[i] = initial_guess; // initial guess x0 as zero vector
-        }
     }
     else
     {
@@ -176,8 +150,33 @@ int main(int argc, char *argv[])
         }
     }
 
-    // Broadcast x0 to all processes (initial guess)
-    MPI_Bcast(x0, n, MPI_DOUBLE, 0, comm); // initial guess
+    // Allocate global vectors in each process
+    p = (double *)malloc(n * sizeof(double)); // global p vector for Allgather
+
+    if (!p)
+    {
+        fprintf(stderr, "[rank %d] Error allocating global vector p of size %d\n", rank, n);
+        fflush(stderr);
+        MPI_Abort(comm, EXIT_FAILURE);
+    }
+
+    // Allocate x0 in each process (initial guess)
+    x0 = (double *)malloc(n * sizeof(double));
+
+    if (!x0)
+    {
+        fprintf(stderr, "[rank %d] Error allocating global vector x0 of size %d\n", rank, n);
+        fflush(stderr);
+        MPI_Abort(comm, EXIT_FAILURE);
+    }
+    // Initialize x0 and b on rank 0
+    for (int i = 0; i < n; i++)
+    {
+        x0[i] = initial_guess; // initial guess x0 as zero vector
+    }
+
+    // Broadcast x0 to all processes (initial guess) to allocate after freeing A_full on rank 0
+    // MPI_Bcast(x0, n, MPI_DOUBLE, 0, comm); // initial guess
 
     // Build b = A * x_known where x_known is a vector of specific values (e.g., all 2.0)
     double *x_known = (double *)malloc(n * sizeof(double));
