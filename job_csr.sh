@@ -4,7 +4,7 @@
 #PBS -N conjugate_gradient_job
 
 # set number of chunks, processors per node, and memory
-#PBS -l select=1:ncpus=2:mem=128gb
+#PBS -l select=2:ncpus=2:mem=128gb -l place=scatter:excl
 
 # set maximum walltime
 #PBS -l walltime=00:20:00
@@ -26,7 +26,7 @@ module load mpich-3.2
 # mpirun.actual -n 32 ./src/main_parallel_csr
 
 # Array of grid sizes for small, medium, large runs
-grid_sizes=(480 850 1300)
+grid_sizes=(480 850 1200)
 
 # Loop over each grid size
 for grid in "${grid_sizes[@]}"; do
