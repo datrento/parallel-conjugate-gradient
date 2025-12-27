@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stddef.h>
 #include <limits.h>
+#include <math.h>
 
 void compute_speedup_and_efficiency(const double *times, const int *procs, int n_runs)
 {
@@ -35,7 +36,7 @@ int validate_grid_size(int grid_size, int rank)
     {
         if (rank == 0)
         {
-            fprintf(stderr, "[rank %d]Error: grid_size=%d exceeds maximum=%d\n",
+            fprintf(stderr, "[rank %d]Error: grid_size=%d exceeds maximum=%d\n", rank,
                     grid_size, max_grid);
             fprintf(stderr, "  n=grid_size^3 must fit in int (INT_MAX=%d)\n", INT_MAX);
             fflush(stderr);
