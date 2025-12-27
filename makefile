@@ -42,7 +42,7 @@ print_config:
 	@echo "Logs directory: $(LOGS_DIR)"
 	@echo "Executable target: $(TARGET)"
 status:
-	qstat -u $$(cat $(LOGS_DIR)/job_id.txt)
+	qstat $$(cat $(LOGS_DIR)/job_id.txt)
 
 my_jobs:
 	qstat -u $$USER
