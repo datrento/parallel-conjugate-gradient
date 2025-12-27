@@ -4,6 +4,7 @@
 #include <mpi.h>
 #include <math.h>
 #include <limits.h>
+#include <stddef.h>
 // #include <omp.h>
 #include <stddef.h>
 
@@ -293,7 +294,7 @@ int csr_build_spd_full(CSR *A, int grid_size, int rank)
         return -1;
     }
 
-    int nnz = 0;
+    size_t nnz = 0;
     for (int iz = 0; iz < nz; iz++)
     {
         for (int iy = 0; iy < ny; iy++)
