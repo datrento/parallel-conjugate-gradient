@@ -11,7 +11,7 @@
 // TODO: profile and performance analysis again
 // TODO: start writing the report
 
-void verify_solution(CSR *A_local, double *x, double *b_local, double *Ap_local, int n_local, int rank, MPI_Comm comm);
+void verify_solution(CSR *A_local, double *x, double *b_local, double *Ax_local, int n_local, int rank, MPI_Comm comm);
 void jacobi_preconditioner_z(double *diag_A, double *r, double *z, int n, int rank);
 void jacobi_preconditioned_conjugate_gradient(
     const CSR *A_local,
@@ -71,6 +71,8 @@ int main(int argc, char *argv[])
     if (argc > 2)
         max_iter = atoi(argv[2]);
     double tol = 1e-10; // relative tolerance
+    if (argc > 3)
+        tol = atof(argv[3]);
 
     // Determine local number of rows and starting row for each process
     int n_local = (rank < remainder) ? base + 1 : base;
@@ -79,7 +81,6 @@ int main(int argc, char *argv[])
     // Pointers for glocal matrix and vectors
     double *x0 = NULL;
     double *p = NULL;
-    double *Ap = NULL;
 
     // Allocate local vectors and matrix in each process
     double *diag_A_local = (double *)malloc(n_local * sizeof(double));
@@ -307,18 +308,18 @@ void jacobi_preconditioner_z(double *diag_A, double *r, double *z, int n, int ra
     }
 }
 
-void verify_solution(CSR *A_local, double *x, double *b_local, double *Ap_local, int n_local, int rank, MPI_Comm comm)
+void verify_solution(CSR *A_local, double *x, double *b_local, double *Ax_local, int n_local, int rank, MPI_Comm comm)
 {
     /***
      * Verifies the solution by computing Ax and comparing it to b.
      * Note: Ax buffer will be overwritten with A*x computation.
      ***/
-    csr_sparse_matvec_mult_local(A_local, x, Ap_local);
+    csr_sparse_matvec_mult_local(A_local, x, Ax_local);
 
     double local_err2 = 0.0, local_b2 = 0.0;
     for (int i = 0; i < n_local; i++)
     {
-        double d = Ap_local[i] - b_local[i];
+        double d = Ax_local[i] - b_local[i];
         local_err2 += d * d;
         local_b2 += b_local[i] * b_local[i];
     }
@@ -361,9 +362,9 @@ void jacobi_preconditioned_conjugate_gradient(
      */
 
     // intermediate scalars
-    double alpha, beta, rsn0, rsnnew, rtzold, rtznew;
+    double alpha = 0.0, beta = 0.0, rsn0 = 0.0, rsnnew = 0.0, rtzold = 0.0, rtznew = 0.0;
 
-    // Ap_local = A_local * x0 use Ap as temporary storage
+    // Ap_local = A_local * x0 use Ap_local as temporary storage for Ax0_local( to resuse the buffer later)
     csr_sparse_matvec_mult_local(A_local, x0, Ap_local);
 
     // r0 = b - Ax0
