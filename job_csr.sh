@@ -16,7 +16,7 @@
 #PBS -e error.log
 
 # change to the directory from which the job was submitted
-# cd $PBS_O_WORKDIR
+cd $PBS_O_WORKDIR
 
 # load necessary modules
 module load mpich-3.2
