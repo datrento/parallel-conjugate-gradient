@@ -2,11 +2,9 @@
 #include "utils.h"
 #include <stdio.h>
 #include <stddef.h>
+#include <limits.h>
 
-void compute_speedup_and_efficiency(
-    const double *times,
-    const int *procs,
-    int n_runs)
+void compute_speedup_and_efficiency(const double *times, const int *procs, int n_runs)
 {
     double T1 = times[0]; // time for 1 process
 
@@ -17,6 +15,35 @@ void compute_speedup_and_efficiency(
         double efficiency = speedup / procs[i];
         printf("%d\t\t%.6f\t%.2f\t%.2f\n", procs[i], times[i], speedup, efficiency);
     }
+}
+
+int validate_grid_size(int grid_size, int rank)
+{
+    const int max_grid = (int)cbrt((double)INT_MAX) - 1;
+
+    if (grid_size <= 0)
+    {
+        if (rank == 0)
+        {
+            fprintf(stderr, "[rank %d]Error: grid_size must be positive (got %d)\n", rank, grid_size);
+            fflush(stderr);
+        }
+        return -1;
+    }
+
+    if (grid_size > max_grid)
+    {
+        if (rank == 0)
+        {
+            fprintf(stderr, "[rank %d]Error: grid_size=%d exceeds maximum=%d\n",
+                    grid_size, max_grid);
+            fprintf(stderr, "  n=grid_size^3 must fit in int (INT_MAX=%d)\n", INT_MAX);
+            fflush(stderr);
+        }
+        return -1;
+    }
+
+    return 0;
 }
 
 void generate_symmetric_positive_definite_dense_matrix(double *A, int grid_size)
