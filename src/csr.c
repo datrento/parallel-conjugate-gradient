@@ -32,6 +32,7 @@ void csr_get_diagonal_local(const CSR *A_local, double *diag_A_local, int rank)
         {
             fprintf(stderr, "[rank %d]Warning: Zero diagonal entry found at global row %d\n", rank, global_row);
             fflush(stderr);
+            MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE); // since it's called by multiple places
         }
 
         diag_A_local[r] = diag_value;

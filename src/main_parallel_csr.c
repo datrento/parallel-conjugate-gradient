@@ -2,9 +2,10 @@
 #include <stdlib.h>
 #include <time.h>
 #include <math.h>
+#include <limits.h>
 #include <mpi.h>
 #include "csr.h"
-// TODO: pbs script for larger runs
+#include "utils.h"
 // TODO: profiling and performance analysis
 // TODO: add omp parallelization within each MPI process for local computations
 // TODO: profile and performance analysis again
@@ -30,15 +31,35 @@ int main(int argc, char *argv[])
 
     MPI_Comm comm = MPI_COMM_WORLD;
     // Problem size
-    int grid_size = 400; // default grid size
+    int grid_size = 300; // default grid size
 
     if (argc > 1)
     {
         grid_size = atoi(argv[1]);
     }
 
+    // Validate grid size to prevent integer overflow
+    if (validate_grid_size(grid_size, rank) != 0) // part of utils.c
+    {
+        MPI_Finalize();
+        return EXIT_FAILURE;
+    }
+
     double initial_guess = 0.0;
     int n = grid_size * grid_size * grid_size;
+
+    // this never be triggered due to prior validation, but just in case
+    if (n <= 0)
+    {
+        if (rank == 0)
+        {
+            fprintf(stderr, "[rank %d] Error: Computed matrix size n=%d is not positive. Check grid_size=%d for overflow.\n", rank, n, grid_size);
+            fflush(stderr);
+        }
+        MPI_Finalize();
+        return EXIT_FAILURE;
+    }
+
     int base = n / size;
     int remainder = n % size;
 
@@ -279,7 +300,7 @@ void jacobi_preconditioner_z(double *diag_A, double *r, double *z, int n, int ra
         {
             fprintf(stderr, "[rank %d]Error: Diagonal element diag_A[%d] is zero.\n", rank, i);
             fflush(stderr);
-            exit(EXIT_FAILURE);
+            MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE); // though it's check before when we extract diagonal elements per rank
         }
 
         z[i] = r[i] / diag_A[i];
@@ -449,7 +470,10 @@ void jacobi_preconditioned_conjugate_gradient(
         // ||rk+1|| < tol * ||r0||
         if (rsnnew < (tol * tol) * rsn0)
         {
-            fprintf(stdout, "[rank %d] Converged in %d iterations.\n", rank, k + 1);
+            if (rank == 0)
+            {
+                fprintf(stdout, "[rank %d] Converged in %d iterations.\n", rank, k + 1);
+            }
             fflush(stdout);
             break;
         }
@@ -472,5 +496,12 @@ void jacobi_preconditioned_conjugate_gradient(
 
         // Update rtzold for next iteration
         rtzold = rtznew;
+    }
+
+    // Check if loop ended due to reaching max_iter
+    if (rank == 0)
+    {
+        fprintf(stdout, "[rank %d] Reached maximum iterations (%d) in Jacobi Preconditioned Conjugate Gradient. Final relative residual: %.6e\n", rank, max_iter, sqrt(rsnnew / rsn0));
+        fflush(stdout);
     }
 }
