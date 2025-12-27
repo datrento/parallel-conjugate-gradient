@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <mpi.h>
+#include <math.h>
+#include <limits.h>
 // #include <omp.h>
 #include <stddef.h>
 
@@ -329,13 +331,21 @@ int csr_build_spd_full(CSR *A, int grid_size, int rank)
             }
         }
     }
-    A->row_ptr[n] = nnz;
-    A->nnz = nnz;
+    A->row_ptr[n] = (int)nnz;
+
+    if (nnz > INT_MAX)
+    {
+        fprintf(stderr, "[rank %d] Error: nnz=%zu exceeds INT_MAX\n", rank, nnz);
+        fflush(stderr);
+        free(A->row_ptr);
+        return -1;
+    }
+
+    A->nnz = (int)nnz;
 
     // Allocate col_indices and values
-    A->col_indices = (int *)malloc(nnz * sizeof(int));
-    A->values = (double *)malloc(nnz * sizeof(double));
-
+    A->col_indices = (int *)malloc(A->nnz * sizeof(int));
+    A->values = (double *)malloc(A->nnz * sizeof(double));
     if (!A->col_indices || !A->values)
     {
         // log error and free previously allocated memory
