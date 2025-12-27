@@ -16,7 +16,6 @@
 #PBS -e error.log
 
 # change to the directory from which the job was submitted
-NUM_PROCESS=1
 # cd $PBS_O_WORKDIR
 
 # load necessary modules
@@ -34,7 +33,7 @@ for grid in "${grid_sizes[@]}"; do
 
     # Redirect stdout and stderr to separate files per grid size
     # usage: mpirun.actual -n <num_processes> ./build/main_parallel_csr <grid_size> <max_iter> <tolerance>
-    mpirun.actual -n $NUM_PROCESS ./build/main_parallel_csr $grid \
+    mpirun.actual -n 1 ./build/main_parallel_csr $grid \
         > logs/output_grid_${grid}.log \
         2> logs/error_grid_${grid}.log 
 done
