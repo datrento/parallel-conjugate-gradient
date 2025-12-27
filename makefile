@@ -16,29 +16,31 @@ SOURCES = $(SRC_DIR)/main_parallel_csr.c $(SRC_DIR)/utils.c $(SRC_DIR)/csr.c
 
 # PBS Script in root
 PBS_SCRIPT = job_csr.sh
-echo "Makefile Configuration:"
-echo "Compiler: $(CC)"
-echo "Source directory: $(SRC_DIR)"
-echo "Build directory: $(BUILD_DIR)"
-echo "Logs directory: $(LOGS_DIR)"
-echo "Executable target: $(TARGET)"
 
-all: compile
+
+all: compile print_config
 
 dirs:
 	mkdir -p $(BUILD_DIR) $(LOGS_DIR)
-	echo "Created directories: $(BUILD_DIR), $(LOGS_DIR)"
+	@echo "Created directories: $(BUILD_DIR), $(LOGS_DIR)"
 
 # Compile program into build/
 compile: dirs
 	$(CC) $(CFLAGS) -o $(TARGET) $(SOURCES) $(LDFLAGS)
-	echo "Compilation finished. Executable at $(TARGET)"
+	@echo "Compilation finished. Executable at $(TARGET)"
 
 # Submit job to the queue
-submit: compile
+submit: compile print_config
 	qsub $(PBS_SCRIPT) | tee $(LOGS_DIR)/job_id.txt
-	echo "Job submitted. Job ID stored in $(LOGS_DIR)/job_id.txt"
+	@echo "Job submitted. Job ID stored in $(LOGS_DIR)/job_id.txt"
 
+print_config:
+	@echo "Makefile Configuration:"
+	@echo "Compiler: $(CC)"
+	@echo "Source directory: $(SRC_DIR)"
+	@echo "Build directory: $(BUILD_DIR)"
+	@echo "Logs directory: $(LOGS_DIR)"
+	@echo "Executable target: $(TARGET)"
 status:
 	qstat -u $$(cat $(LOGS_DIR)/job_id.txt)
 
@@ -51,12 +53,12 @@ my_jobs:
 # disable this in the cluster environment
 local_run: compile
 	mpirun -n 4 $(TARGET) 300 > $(LOGS_DIR)/local_run_out.log 2> $(LOGS_DIR)/local_run_err.log
-	echo "Local run completed. Output in $(LOGS_DIR)/local_run_out.log, errors in $(LOGS_DIR)/local_run_err.log"
+	@echo "Local run completed. Output in $(LOGS_DIR)/local_run_out.log, errors in $(LOGS_DIR)/local_run_err.log"
 
 # Clean everything generated
 clean:
 	rm -rf $(BUILD_DIR)
 	rm -rf $(LOGS_DIR)/*.log *.out *.err
-	echo "Cleaned build and log files."
+	@echo "Cleaned build and log files."
 
-.PHONY: all compile submit clean dirs
+.PHONY: all compile submit clean dirs status my_jobs local_run print_config
