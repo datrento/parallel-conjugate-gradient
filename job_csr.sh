@@ -2,7 +2,6 @@
 
 # set job name
 #PBS -N conjugate_gradient_job
-NUM_PROCESS=1
 # set number of chunks, processors per node, and memory
 #PBS -l select=1:ncpus=1:mem=256gb -l place=scatter:excl
 
@@ -17,7 +16,8 @@ NUM_PROCESS=1
 #PBS -e error.log
 
 # change to the directory from which the job was submitted
-cd $PBS_O_WORKDIR
+NUM_PROCESS=1
+# cd $PBS_O_WORKDIR
 
 # load necessary modules
 module load mpich-3.2
