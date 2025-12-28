@@ -31,7 +31,7 @@ int main(int argc, char *argv[])
 
     MPI_Comm comm = MPI_COMM_WORLD;
     // Problem size
-    int grid_size = 300; // default grid size
+    int grid_size = 200; // default grid size
 
     if (argc > 1)
     {
@@ -105,7 +105,7 @@ int main(int argc, char *argv[])
     {
         const char *mtx_filename = "../data/matrix_csr.mtx";
 
-        printf("[rank %d]Building CRS matrix (27-point stencil) on rank 0...\n", rank);
+        printf("[rank %d]Building CSR matrix (7-point stencil) on rank 0...\n", rank);
         printf("[rank %d]Matrix size: %d x %d\n", rank, n, n);
         printf("[rank %d]Number of processes: %d\n", rank, size);
         printf("[rank %d]Each process local rows: %d\n", rank, n_local);
@@ -219,6 +219,9 @@ int main(int argc, char *argv[])
         MPI_Abort(comm, EXIT_FAILURE);
     }
 
+    if (rank == 0)
+        printf("[rank %d] Precomputing recvcounts and displs for Allgatherv...\n", rank);
+
     // Rank order preserved while gathering n_local from all ranks
     MPI_Allgather(&n_local, 1, MPI_INT, recvcounts, 1, MPI_INT, comm);
 
@@ -251,6 +254,11 @@ int main(int argc, char *argv[])
         recvcounts, displs,
         max_iter, tol, rank, comm);
     local_time = MPI_Wtime() - local_time;
+    if (rank == 0)
+    {
+        printf("[rank %d] Completed Jacobi Preconditioned Conjugate Gradient solver.\n", rank);
+        fflush(stdout);
+    }
 
     //  Gather the local x (solution) to x0 in all processes
     MPI_Allgatherv(x_local, n_local, MPI_DOUBLE, x0, recvcounts, displs, MPI_DOUBLE, comm);
@@ -401,6 +409,17 @@ void jacobi_preconditioned_conjugate_gradient(
     rsn0 = rsn0_rtzold_sum[0];
     rtzold = rsn0_rtzold_sum[1];
 
+    // Status of the solver for convergence
+    typedef enum
+    {
+        CG_NOT_CONVERGED = 0,
+        CG_CONVERGED_RESIDUAL = 1,
+        CG_BREAKDOWN_PAP = 2,
+        CG_BREAKDOWN_RTZ = 3
+    } cg_status_t;
+
+    cg_status_t status = CG_NOT_CONVERGED;
+
     // Main iteration loop
     for (int k = 0; k < max_iter; k++)
     {
@@ -420,10 +439,11 @@ void jacobi_preconditioned_conjugate_gradient(
 
         MPI_Allreduce(MPI_IN_PLACE, &pAp, 1, MPI_DOUBLE, MPI_SUM, comm);
 
-        if (fabs(pAp) < 1e-14)
+        if (fabs(pAp) < 1e-20)
         {
             fprintf(stderr, "[rank %d] Error: Division by zero encountered in iteration %d.\n", rank, k);
             fflush(stderr);
+            status = CG_BREAKDOWN_PAP;
             break; // Exit the loop to prevent division by zero
         }
 
@@ -475,13 +495,15 @@ void jacobi_preconditioned_conjugate_gradient(
                 fprintf(stdout, "[rank %d] Converged in %d iterations.\n", rank, k + 1);
             }
             fflush(stdout);
+            status = CG_CONVERGED_RESIDUAL;
             break;
         }
 
-        if (fabs(rtzold) < 1e-14)
+        if (fabs(rtzold) < 1e-20)
         {
             fprintf(stderr, "[rank %d] Error: Division by zero encountered in iteration %d.\n", rank, k);
             fflush(stderr);
+            status = CG_BREAKDOWN_RTZ;
             break; // Exit the loop to prevent division by zero
         }
 
@@ -501,7 +523,8 @@ void jacobi_preconditioned_conjugate_gradient(
     // Check if loop ended due to reaching max_iter
     if (rank == 0)
     {
-        fprintf(stdout, "[rank %d] Reached maximum iterations (%d) in Jacobi Preconditioned Conjugate Gradient. Final relative residual: %.6e\n", rank, max_iter, sqrt(rsnnew / rsn0));
+        if (status == CG_NOT_CONVERGED)
+            fprintf(stdout, "[rank %d] Reached maximum iterations (%d) without convergence.\n", rank, max_iter);
         fflush(stdout);
     }
 }

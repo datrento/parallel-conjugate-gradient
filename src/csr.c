@@ -71,7 +71,7 @@ void print_csr_memory_usage(int rank, size_t nnz, int n, const char *label)
     size_t int_size = sizeof(int);
     size_t double_size = sizeof(double);
 
-    size_t row_ptr_size = (nnz + 1) * int_size;
+    size_t row_ptr_size = (n + 1) * int_size;
     size_t col_indices_size = nnz * int_size;
     size_t values_size = nnz * double_size;
 
@@ -79,7 +79,7 @@ void print_csr_memory_usage(int rank, size_t nnz, int n, const char *label)
     size_t total_size = row_ptr_size + col_indices_size + values_size;
 
     // dense total size
-    size_t dense_size = n * n * double_size;
+    size_t dense_size = (size_t)n * n * double_size;
     // compare it with the denser matrix memory usage use TB for the full dense matrix
     printf("[rank %d] %s: values_mem=%.2f MB col_indices_mem=%.2f MB row_ptr_mem=%.2f MB total_mem=%.2f GB dense_equiv_mem=%.2f TB\n",
            rank, label, (double)values_size / mb, (double)col_indices_size / mb,
