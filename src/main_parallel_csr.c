@@ -277,7 +277,7 @@ int main(int argc, char *argv[])
 
     if (rank == 0)
     {
-        printf("[rank %d]Wall-clock time taken for Jacobi Preconditioned Conjugate Gradient: max %. 6f s\n",
+        printf("[rank %d]Wall-clock time taken for Jacobi Preconditioned Conjugate Gradient: max %.6f s\n",
                rank, max_time);
         printf("[rank %d]Wall-clock time taken for Jacobi Preconditioned Conjugate Gradient: min %.6f s\n",
                rank, min_time);
@@ -301,7 +301,7 @@ int main(int argc, char *argv[])
             // Write header if file is new
             if (!file_exists)
             {
-                fprintf(time_file, "# grid_size num_processes max_time_seconds min_time_seconds\n");
+                fprintf(time_file, "#grid_size num_processes max_time_seconds min_time_seconds\n");
             }
 
             // Append grid_size, number of processes, max and min time
