@@ -6,7 +6,7 @@
 #PBS -l select=32:ncpus=1:mem=128gb -l place=scatter:excl
 
 # set maximum walltime
-#PBS -l walltime=00:20:00
+#PBS -l walltime=02:00:00
 
 # set queue
 #PBS -q short_cpuQ
