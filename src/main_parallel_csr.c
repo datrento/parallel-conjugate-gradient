@@ -121,6 +121,10 @@ int main(int argc, char *argv[])
             MPI_Abort(comm, EXIT_FAILURE);
         }
 
+        // check SPD properties of the full matrix on rank 0
+        // if (export_csr > 0)
+        verify_spd_properties(&A_full, rank);
+
         // Debug: print memory usage of full CSR matrix on rank 0
         print_csr_memory_usage(rank, A_full.nnz, A_full.n, "full");
 

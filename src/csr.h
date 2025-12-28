@@ -32,3 +32,6 @@ void csr_free(CSR *A);
 
 // Export CSR matrix to Matrix Market format for verification
 void export_csr_to_mtx(const char *filename, CSR *A, int n, int rank);
+
+// Check spd properties of the matrix
+void verify_spd_properties(CSR *A, int rank);
