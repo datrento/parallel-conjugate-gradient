@@ -5,6 +5,7 @@ LDFLAGS = -lm
 # Directories
 SRC_DIR = src
 BUILD_DIR = build
+OUTPUT_DIR = output
 LOGS_DIR = logs
 
 # Files
@@ -21,18 +22,19 @@ PBS_SCRIPT = job_csr.sh
 all: compile print_config
 
 dirs:
-	mkdir -p $(BUILD_DIR) $(LOGS_DIR)
+	mkdir -p $(BUILD_DIR) $(LOGS_DIR) $(OUTPUT_DIR)
 	@echo "Created directories: $(BUILD_DIR), $(LOGS_DIR)"
 
 # Compile program into build/
 compile: dirs
-	$(CC) $(CFLAGS) -o $(TARGET) $(SOURCES) $(LDFLAGS)
+	$(CC) $(CFLAGS) -DDEBUG -o $(TARGET) $(SOURCES) $(LDFLAGS)
 	@echo "Compilation finished. Executable at $(TARGET)"
 
 # Submit job to the queue
 submit: compile print_config
 	qsub $(PBS_SCRIPT) | tee $(LOGS_DIR)/job_id.txt
 	@echo "Job submitted. Job ID stored in $(LOGS_DIR)/job_id.txt"
+
 
 print_config:
 	@echo "Makefile Configuration:"
@@ -41,6 +43,9 @@ print_config:
 	@echo "Build directory: $(BUILD_DIR)"
 	@echo "Logs directory: $(LOGS_DIR)"
 	@echo "Executable target: $(TARGET)"
+
+trace:
+	tracejob $$(cat $(LOGS_DIR)/job_id.txt)
 status:
 	qstat $$(cat $(LOGS_DIR)/job_id.txt) -H
 
@@ -59,6 +64,7 @@ local_run: compile
 clean:
 	rm -rf $(BUILD_DIR)
 	rm -rf $(LOGS_DIR)/*.log *.out *.err
+	rm -rf $(OUTPUT_DIR)/*.txt
 	@echo "Cleaned build and log files."
 
 .PHONY: all compile submit clean dirs status my_jobs local_run print_config

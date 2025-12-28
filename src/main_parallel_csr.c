@@ -284,7 +284,7 @@ int main(int argc, char *argv[])
         fflush(stdout);
 
         // store the max_time for performance analysis later
-        FILE *time_file = fopen("jcgtimes.txt", "a");
+        FILE *time_file = fopen("../output/jcgtimes.txt", "a");
         if (time_file)
         {
             // Append grid_size, number of processes, and time taken
@@ -359,6 +359,85 @@ void verify_solution(CSR *A_local, double *x, double *b_local, double *Ax_local,
     {
         printf("[rank %d]Verification: ||Ax - b|| = %.6e, ||Ax - b|| / ||b|| (relative) = %.6e\n",
                rank, sqrt(err2), sqrt(err2) / sqrt(b2));
+    }
+}
+void csr_local_Ap_contribution(
+    const CSR *A_local,
+    const double *p_local,
+    double *Ap_local,
+    int n_local,
+    int row_start,
+    int row_end)
+{
+    for (int i = 0; i < n_local; i++)
+    {
+        double sum = 0.0;
+
+        for (int j = A_local->row_ptr[i]; j < A_local->row_ptr[i + 1]; j++)
+        {
+            int col = A_local->col_indices[j];
+
+            // check if col index belongs to local part of p (for each value of A_local row check if the corresponding p is local)
+            if (col >= row_start && col < row_end)
+            {
+                // local part of p
+                sum += A_local->values[j] * p_local[col - row_start]; // adjust index for local p
+            }
+        }
+        Ap_local[i] = sum;
+    }
+}
+
+void csr_global_Ap_contribution(
+    const CSR *A_local,
+    const double *p,
+    double *Ap_local,
+    int n_local,
+    int row_start,
+    int row_end)
+{
+    for (int i = 0; i < n_local; i++)
+    {
+        double sum = Ap_local[i];
+        for (int j = A_local->row_ptr[i]; j < A_local->row_ptr[i + 1]; j++)
+        {
+            int col = A_local->col_indices[j];
+            // check if col index belongs to remote part of p
+            if (col < row_start || col >= row_end)
+            {
+                // remote part of p
+                sum += A_local->values[j] * p[col];
+            }
+        }
+        Ap_local[i] = sum;
+    }
+}
+
+void check_the_ap_computation_is_valid(const CSR *A_local, double *Ap_local, double *p, int n_local, int rank)
+{
+    static int checked_once = 0;
+    if (!checked_once)
+    {
+        double *Ap_ref = (double *)malloc(n_local * sizeof(double));
+        csr_sparse_matvec_mult_local(A_local, p, Ap_ref);
+
+        double maxdiff = 0.0;
+
+        for (int i = 0; i < n_local; i++)
+        {
+            double diff = fabs(Ap_local[i] - Ap_ref[i]);
+            if (diff > maxdiff)
+                maxdiff = diff;
+        }
+
+        if (rank == 0)
+        {
+            printf("[rank %d][DEBUG] Ap split vs max diff: %.6e\n", rank, maxdiff);
+            fflush(stdout);
+        }
+
+        free(Ap_ref);
+        checked_once = 1;
     }
 }
 
@@ -441,15 +520,36 @@ void jacobi_preconditioned_conjugate_gradient(
 
     cg_status_t status = CG_NOT_CONVERGED;
 
+    const int row_start = displs[rank];
+    const int row_end = row_start + n_local;
+
     // Main iteration loop
     for (int k = 0; k < max_iter; k++)
     {
         // Gather p_local to p (global)
         // communication bottleneck here
-        MPI_Allgatherv(p_local, n_local, MPI_DOUBLE, p, recvcounts, displs, MPI_DOUBLE, comm);
+        // MPI_Allgatherv(p_local, n_local, MPI_DOUBLE, p, recvcounts, displs, MPI_DOUBLE, comm);
 
-        // A = A * p
-        csr_sparse_matvec_mult_local(A_local, p, Ap_local);
+        // replace the above Allgatherv with non-blocking version
+        MPI_Request request;
+        MPI_Iallgatherv(p_local, n_local, MPI_DOUBLE, p, recvcounts, displs, MPI_DOUBLE, comm, &request);
+
+        // While waiting for p to be gathered, we can perform other computations if needed
+        // Compute local-only Ap contribution while p is gathering
+        // Ap_local = A_local * p_local
+        csr_local_Ap_contribution(A_local, p_local, Ap_local, n_local, row_start, row_end);
+
+        // Wait for full p to arrive
+        MPI_Wait(&request, MPI_STATUS_IGNORE);
+
+        // Finish remote contributions using gathered p
+        // Ap_local += A_local * p (remote contributions)
+        csr_global_Ap_contribution(A_local, p, Ap_local, n_local, row_start, row_end);
+
+// check if the Ap_local is valid
+#ifdef DEBUG
+        check_the_ap_computation_is_valid(A_local, Ap_local, p, n_local, rank);
+#endif
 
         // alpha = rtz / (p^T * Ap)
         double pAp = 0.0;
