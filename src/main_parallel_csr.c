@@ -282,6 +282,23 @@ int main(int argc, char *argv[])
         printf("[rank %d]Wall-clock time taken for Jacobi Preconditioned Conjugate Gradient: min %.6f s\n",
                rank, min_time);
         fflush(stdout);
+
+        // store the max_time for performance analysis later
+        FILE *time_file = fopen("jcgtimes.txt", "a");
+        if (time_file)
+        {
+            // Append grid_size, number of processes, and time taken
+            // header: grid_size num_processes time_in_seconds
+            fprintf(time_file, "%d %d %.6f\n", grid_size, size, max_time);
+            fclose(time_file);
+            fprintf(stdout, "[rank %d]Appended time data to jcgtimes.txt, grid_size=%d, num_processes=%d, time=%.6f\n", rank, grid_size, size, max_time);
+            fflush(stdout);
+        }
+        else
+        {
+            fprintf(stderr, "[rank %d] Error opening jcgtimes.txt for writing\n", rank);
+            fflush(stderr);
+        }
     }
 
     // Common frees (all ranks)
