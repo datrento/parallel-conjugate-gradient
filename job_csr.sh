@@ -3,7 +3,7 @@
 # set job name
 #PBS -N conjugate_gradient_job
 # set number of chunks, processors per node, and memory
-#PBS -l select=32:ncpus=1:mem=128gb -l place=scatter:excl
+#PBS -l select=32:ncpus=1:mem=192gb -l place=scatter:excl
 
 # set maximum walltime
 #PBS -l walltime=02:00:00
