@@ -27,7 +27,7 @@ dirs:
 
 # Compile program into build/
 compile: dirs
-	$(CC) $(CFLAGS) -DDEBUG -o $(TARGET) $(SOURCES) $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $(TARGET) $(SOURCES) $(LDFLAGS)
 	@echo "Compilation finished. Executable at $(TARGET)"
 
 # Submit job to the queue
