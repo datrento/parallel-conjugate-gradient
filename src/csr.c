@@ -7,7 +7,64 @@
 #include <stddef.h>
 // #include <omp.h>
 #include <stddef.h>
+void verify_spd_properties(CSR *A, int rank)
+{
+    int n = A->n;
 
+    // Check diagonal dominance and symmetry
+    for (int i = 0; i < n; i++)
+    {
+        double diag_val = 0.0;
+        double off_diag_sum = 0.0;
+
+        for (int j = A->row_ptr[i]; j < A->row_ptr[i + 1]; j++)
+        {
+            int col = A->col_indices[j];
+            double val = A->values[j];
+
+            if (col == i)
+            {
+                diag_val = val;
+            }
+            else
+            {
+                off_diag_sum += fabs(val);
+            }
+
+            // Check symmetry:  A(i,j) should equal A(j,i)
+            // Find A(col, i)
+            int found = 0;
+            for (int k = A->row_ptr[col]; k < A->row_ptr[col + 1]; k++)
+            {
+                if (A->col_indices[k] == i)
+                {
+                    if (fabs(A->values[k] - val) > 1e-10)
+                    {
+                        fprintf(stderr, "[rank %d] Symmetry violated at (%d,%d): %f != %f\n",
+                                rank, i, col, val, A->values[k]);
+                    }
+                    found = 1;
+                    break;
+                }
+            }
+            if (!found && col != i)
+            {
+                fprintf(stderr, "[rank %d] Symmetry violated:  (%d,%d) exists but (%d,%d) missing\n",
+                        rank, i, col, col, i);
+            }
+        }
+
+        // Check diagonal dominance
+        if (diag_val <= off_diag_sum)
+        {
+            fprintf(stderr, "[rank %d] Warning: Row %d not strictly diagonally dominant:  diag=%f, sum=%f\n",
+                    rank, i, diag_val, off_diag_sum);
+        }
+    }
+
+    printf("[rank %d] SPD verification complete\n", rank);
+    fflush(stdout);
+}
 void csr_get_diagonal_local(const CSR *A_local, double *diag_A_local, int rank)
 {
     /**
@@ -81,6 +138,7 @@ void print_csr_memory_usage(int rank, size_t nnz, int n, const char *label)
     // dense total size
     size_t dense_size = (size_t)n * n * double_size;
     // compare it with the denser matrix memory usage use TB for the full dense matrix
+    printf("[rank %d] CSR Matrix (%s): nnz=%zu, n=%d\n", rank, label, nnz, n);
     printf("[rank %d] %s: values_mem=%.2f MB col_indices_mem=%.2f MB row_ptr_mem=%.2f MB total_mem=%.2f GB dense_equiv_mem=%.2f TB\n",
            rank, label, (double)values_size / mb, (double)col_indices_size / mb,
            (double)row_ptr_size / mb, (double)total_size / (mb * 1024),
@@ -265,8 +323,8 @@ int csr_build_spd_full(CSR *A, int grid_size, int rank)
      * using a 7-point stencil for a 3D grid of size grid_size^3.
      *
      * Parameters:
-     *    A         : Pointer to CSR structure to be filled
-     *    grid_size : Size of the 3D grid (grid_size x grid_size x grid_size)
+     *    A         :  Pointer to CSR structure to be filled
+     *    grid_size :  Size of the 3D grid (grid_size x grid_size x grid_size)
      *
      * Returns:
      *    0 on success, -1 on failure
@@ -294,6 +352,7 @@ int csr_build_spd_full(CSR *A, int grid_size, int rank)
         return -1;
     }
 
+    // First pass: count non-zeros per row and build row_ptr
     size_t nnz = 0;
     for (int iz = 0; iz < nz; iz++)
     {
@@ -352,7 +411,7 @@ int csr_build_spd_full(CSR *A, int grid_size, int rank)
     if (!A->col_indices || !A->values)
     {
         // log error and free previously allocated memory
-        fprintf(stderr, "[rank %d] Error: Memory allocation failed for col_indices or values\n", rank);
+        fprintf(stderr, "[rank %d] Error:  Memory allocation failed for col_indices or values\n", rank);
         fprintf(stderr, "[rank %d] nnz=%zu requires %.2f GB for col_indices and %.2f GB for values\n",
                 rank, nnz, nnz * sizeof(int) / (1024.0 * 1024.0 * 1024.0), nnz * sizeof(double) / (1024.0 * 1024.0 * 1024.0));
 
@@ -364,7 +423,8 @@ int csr_build_spd_full(CSR *A, int grid_size, int rank)
         return -1;
     }
 
-    // Second pass: fill entries (diagonal = 6.0, off-diagonal = -1.0)
+    // Second pass:  fill entries with strict diagonal dominance
+    // diagonal = (number of off-diagonal neighbors) + 0.1, off-diagonal = -1.0
     for (int iz = 0; iz < nz; iz++)
     {
         for (int iy = 0; iy < ny; iy++)
@@ -373,6 +433,9 @@ int csr_build_spd_full(CSR *A, int grid_size, int rank)
             {
                 int row = iz * nx * ny + iy * nx + ix;
                 size_t pos = A->row_ptr[row];
+
+                int num_neighbors = 0; // Count actual off-diagonal neighbors
+                size_t diag_pos = 0;   // Track position of diagonal entry
 
                 // Loop over 7-point stencil (face neighbors only)
                 for (int sz = -1; sz <= 1; sz++)
@@ -399,17 +462,21 @@ int csr_build_spd_full(CSR *A, int grid_size, int rank)
 
                                 if (col == row)
                                 {
-                                    A->values[pos] = 6.0; // Diagonal (matches max # of face neighbors)
+                                    diag_pos = pos; // Remember where diagonal is
                                 }
                                 else
                                 {
                                     A->values[pos] = -1.0; // Off-diagonal
+                                    num_neighbors++;
                                 }
                                 pos++;
                             }
                         }
                     }
                 }
+
+                // Set diagonal = number of off-diagonal neighbors + epsilon for strict dominance
+                A->values[diag_pos] = (double)num_neighbors + 0.1;
             }
         }
     }
