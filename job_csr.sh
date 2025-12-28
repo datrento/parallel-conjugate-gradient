@@ -26,7 +26,7 @@ module load mpich-3.2
 
 # Array of grid sizes for small, medium, large runs
 #Define grid sizes and number of processors
-grid_sizes=(280 480 600)
+grid_sizes=(400 600 1000)
 nprocs_list=(1 2 4 8 16 32)
 
 for grid in "${grid_sizes[@]}"; do
