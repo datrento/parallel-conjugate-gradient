@@ -277,26 +277,42 @@ int main(int argc, char *argv[])
 
     if (rank == 0)
     {
-        printf("[rank %d]Wall-clock time taken for Jacobi Preconditioned Conjugate Gradient: max %.6f s\n",
+        printf("[rank %d]Wall-clock time taken for Jacobi Preconditioned Conjugate Gradient: max %. 6f s\n",
                rank, max_time);
         printf("[rank %d]Wall-clock time taken for Jacobi Preconditioned Conjugate Gradient: min %.6f s\n",
                rank, min_time);
         fflush(stdout);
 
         // store the max_time for performance analysis later
-        FILE *time_file = fopen("../output/jcgtimes.txt", "a");
+        const char *time_filename = "../output/jcgtimes.txt";
+
+        // Check if file exists to decide whether to write header
+        int file_exists = 0;
+        FILE *check_file = fopen(time_filename, "r");
+        if (check_file)
+        {
+            file_exists = 1;
+            fclose(check_file);
+        }
+
+        FILE *time_file = fopen(time_filename, "a");
         if (time_file)
         {
-            // Append grid_size, number of processes, and time taken
-            // header: grid_size num_processes time_in_seconds
-            fprintf(time_file, "%d %d %.6f\n", grid_size, size, max_time);
+            // Write header if file is new
+            if (!file_exists)
+            {
+                fprintf(time_file, "# grid_size num_processes max_time_seconds min_time_seconds\n");
+            }
+
+            // Append grid_size, number of processes, max and min time
+            fprintf(time_file, "%d %d %.6f %.6f\n", grid_size, size, max_time, min_time);
             fclose(time_file);
-            fprintf(stdout, "[rank %d]Appended time data to jcgtimes.txt, grid_size=%d, num_processes=%d, time=%.6f\n", rank, grid_size, size, max_time);
+            fprintf(stdout, "[rank %d]Appended time data to %s:  grid_size=%d, num_processes=%d, max_time=%.6f, min_time=%.6f\n", rank, time_filename, grid_size, size, max_time, min_time);
             fflush(stdout);
         }
         else
         {
-            fprintf(stderr, "[rank %d] Error opening jcgtimes.txt for writing\n", rank);
+            fprintf(stderr, "[rank %d] Error opening %s for writing\n", rank, time_filename);
             fflush(stderr);
         }
     }
