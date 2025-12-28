@@ -8,7 +8,8 @@ src/.ipynb_checkpoints
 # Compiled Object files
 src/*.o
 src/*.out
-
+build/
+logs/
 data/
 papers/
 
