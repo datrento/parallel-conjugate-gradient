@@ -25,16 +25,16 @@ module load mpich-3.2
 # mpirun.actual -n 32 ./src/main_parallel_csr
 
 # Array of grid sizes for small, medium, large runs
+#Define grid sizes and number of processors
 grid_sizes=(480 850 1200)
+nprocs_list=(1 2 4 8 16 32)
 
-# Loop over each grid size
 for grid in "${grid_sizes[@]}"; do
-    echo "Running grid_size=$grid"
-
-    # Redirect stdout and stderr to separate files per grid size
-    # usage: mpirun.actual -n <num_processes> ./build/main_parallel_csr <grid_size> <max_iter> <tolerance>
-    mpirun.actual -n 1 ./build/main_parallel_csr $grid \
-        > logs/output_grid_${grid}.log \
-        2> logs/error_grid_${grid}.log 
+  for np in "${nprocs_list[@]}"; do
+    echo "Running grid_size=$grid with np=$np"
+    mpirun.actual -n "$np" ./build/main_parallel_csr "$grid" \
+      > "logs/output_grid_${grid}_np_${np}.log" \
+      2> "logs/error_grid_${grid}_np_${np}.log"
+  done
 done
 
