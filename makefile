@@ -31,7 +31,7 @@ compile: dirs
 	@echo "Compilation finished. Executable at $(TARGET)"
 
 # Submit job to the queue
-submit: compile print_config
+submit: compile print_config dirs
 	qsub $(PBS_SCRIPT) | tee $(LOGS_DIR)/job_id.txt
 	@echo "Job submitted. Job ID stored in $(LOGS_DIR)/job_id.txt"
 
