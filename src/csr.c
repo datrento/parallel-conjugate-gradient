@@ -71,7 +71,7 @@ void print_csr_memory_usage(int rank, size_t nnz, int n, const char *label)
     size_t int_size = sizeof(int);
     size_t double_size = sizeof(double);
 
-    size_t row_ptr_size = (nnz + 1) * int_size;
+    size_t row_ptr_size = (n + 1) * int_size;
     size_t col_indices_size = nnz * int_size;
     size_t values_size = nnz * double_size;
 
