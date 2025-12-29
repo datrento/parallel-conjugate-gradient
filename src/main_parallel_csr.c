@@ -284,7 +284,7 @@ int main(int argc, char *argv[])
         fflush(stdout);
 
         // store the max_time for performance analysis later
-        const char *time_filename = "../output/jcgtimes.txt";
+        const char *time_filename = "output/jcgtimes.txt";
 
         // Check if file exists to decide whether to write header
         int file_exists = 0;
