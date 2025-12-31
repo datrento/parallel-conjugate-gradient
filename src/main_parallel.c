@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
-#include "utils.h"
+#include "dense_utils.h"
 #include <math.h>
 #include <mpi.h>
 

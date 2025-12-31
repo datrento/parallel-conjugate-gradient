@@ -1,25 +1,14 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <time.h>
-#include <math.h>
-#include <limits.h>
-#include <mpi.h>
 #include "csr.h"
 #include "utils.h"
-// TODO: profiling and performance analysis
-// TODO: add omp parallelization within each MPI process for local computations
-// TODO: profile and performance analysis again
-// TODO: start writing the report
-
-void verify_solution(CSR *A_local, double *x, double *b_local, double *Ax_local, int n_local, int rank, MPI_Comm comm);
-void jacobi_preconditioner_z(double *diag_A, double *r, double *z, int n, int rank);
-void jacobi_preconditioned_conjugate_gradient(
-    const CSR *A_local,
-    double *diag_A_local, double *b_local, double *x0,
-    double *x_local, double *r_local, double *p, double *p_local,
-    double *z_local, double *Ap_local, int n_local, int n,
-    int *recvcounts, int *displs,
-    int max_iter, double tol, int rank, MPI_Comm comm);
+#include "config.h"
+#include "solver.h"
+#include "solver_utils.h"
+#include "csr_matrix_builder.h"
+#include <math.h>
+#include <mpi.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <limits.h>
 
 int main(int argc, char *argv[])
 {
@@ -64,7 +53,7 @@ int main(int argc, char *argv[])
     int remainder = n % size;
 
     // flag to export csr matrix from rank 0 for verification of SPD properties
-    int export_csr = 0;
+    int export_csr = 1;
 
     // Optimization parameters for Conjugate Gradient
     int max_iter = 1000;
@@ -103,7 +92,7 @@ int main(int argc, char *argv[])
 
     if (rank == 0)
     {
-        const char *mtx_filename = "../data/matrix_csr.mtx";
+        const char *mtx_filename = "data/matrix_csr.mtx";
 
         printf("[rank %d]Building CSR matrix (7-point stencil) on rank 0...\n", rank);
         printf("[rank %d]Matrix size: %d x %d\n", rank, n, n);
@@ -284,19 +273,35 @@ int main(int argc, char *argv[])
         fflush(stdout);
 
         // store the max_time for performance analysis later
-        FILE *time_file = fopen("jcgtimes.txt", "a");
+        const char *time_filename = "output/jcgtimes.txt";
+
+        // Check if file exists to decide whether to write header
+        int file_exists = 0;
+        FILE *check_file = fopen(time_filename, "r");
+        if (check_file)
+        {
+            file_exists = 1;
+            fclose(check_file);
+        }
+
+        FILE *time_file = fopen(time_filename, "a");
         if (time_file)
         {
-            // Append grid_size, number of processes, and time taken
-            // header: grid_size num_processes time_in_seconds
-            fprintf(time_file, "%d %d %.6f\n", grid_size, size, max_time);
+            // Write header if file is new
+            if (!file_exists)
+            {
+                fprintf(time_file, "#grid_size num_processes max_time_seconds min_time_seconds\n");
+            }
+
+            // Append grid_size, number of processes, max and min time
+            fprintf(time_file, "%d %d %.6f %.6f\n", grid_size, size, max_time, min_time);
             fclose(time_file);
-            fprintf(stdout, "[rank %d]Appended time data to jcgtimes.txt, grid_size=%d, num_processes=%d, time=%.6f\n", rank, grid_size, size, max_time);
+            fprintf(stdout, "[rank %d]Appended time data to %s:  grid_size=%d, num_processes=%d, max_time=%.6f, min_time=%.6f\n", rank, time_filename, grid_size, size, max_time, min_time);
             fflush(stdout);
         }
         else
         {
-            fprintf(stderr, "[rank %d] Error opening jcgtimes.txt for writing\n", rank);
+            fprintf(stderr, "[rank %d] Error opening %s for writing\n", rank, time_filename);
             fflush(stderr);
         }
     }
@@ -316,236 +321,4 @@ int main(int argc, char *argv[])
     csr_free(&A_local);
     MPI_Finalize();
     return 0;
-}
-
-void jacobi_preconditioner_z(double *diag_A, double *r, double *z, int n, int rank)
-{
-    /***
-     * Jacobi preconditioner: z = M^-1 * r where M = diag(A) => z = diag(A)^-1 * r
-     ***/
-    for (int i = 0; i < n; i++)
-    {
-        if (diag_A[i] == 0.0)
-        {
-            fprintf(stderr, "[rank %d]Error: Diagonal element diag_A[%d] is zero.\n", rank, i);
-            fflush(stderr);
-            MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE); // though it's check before when we extract diagonal elements per rank
-        }
-
-        z[i] = r[i] / diag_A[i];
-    }
-}
-
-void verify_solution(CSR *A_local, double *x, double *b_local, double *Ax_local, int n_local, int rank, MPI_Comm comm)
-{
-    /***
-     * Verifies the solution by computing Ax and comparing it to b.
-     * Note: Ax buffer will be overwritten with A*x computation.
-     ***/
-    csr_sparse_matvec_mult_local(A_local, x, Ax_local);
-
-    double local_err2 = 0.0, local_b2 = 0.0;
-    for (int i = 0; i < n_local; i++)
-    {
-        double d = Ax_local[i] - b_local[i];
-        local_err2 += d * d;
-        local_b2 += b_local[i] * b_local[i];
-    }
-    double err2 = 0.0, b2 = 0.0;
-    MPI_Reduce(&local_err2, &err2, 1, MPI_DOUBLE, MPI_SUM, 0, comm);
-    MPI_Reduce(&local_b2, &b2, 1, MPI_DOUBLE, MPI_SUM, 0, comm);
-
-    if (rank == 0)
-    {
-        printf("[rank %d]Verification: ||Ax - b|| = %.6e, ||Ax - b|| / ||b|| (relative) = %.6e\n",
-               rank, sqrt(err2), sqrt(err2) / sqrt(b2));
-    }
-}
-
-void jacobi_preconditioned_conjugate_gradient(
-    const CSR *A_local,
-    double *diag_A_local, double *b_local, double *x0,
-    double *x_local, double *r_local, double *p, double *p_local,
-    double *z_local, double *Ap_local, int n_local, int n,
-    int *recvcounts, int *displs,
-    int max_iter, double tol, int rank, MPI_Comm comm)
-{
-    /**
-     * Jacobi Preconditioned Conjugate Gradient Method to solve Ax = b
-     * A_local: local CSR matrix size: (nnz_local for values and col_indices; row_ptr of size n_local+1)
-     * diag_A_local: diagonal elements of local CSR matrix
-     * b_local: local right-hand side vector size: (n_local)
-     * x0: initial guess (global) size: (n)
-     * x_local: local solution vector size: (n_local)
-     * r_local: local residual vector size: (n_local)
-     * p: global search direction vector size: (n)
-     * p_local: local search direction vector size: (n_local)
-     * z_local: local preconditioned residual vector size: (n_local)
-     * Ap_local: local A*p vector size: (n_local)
-     * n_local: number of local rows
-     * n: global number of rows
-     * recvcounts, displs: for Allgatherv of p vector size: (number of processes)
-     * max_iter: maximum number of iterations
-     * tol: relative tolerance for convergence
-     */
-
-    // intermediate scalars
-    double alpha = 0.0, beta = 0.0, rsn0 = 0.0, rsnnew = 0.0, rtzold = 0.0, rtznew = 0.0;
-
-    // Ap_local = A_local * x0 use Ap_local as temporary storage for Ax0_local( to resuse the buffer later)
-    csr_sparse_matvec_mult_local(A_local, x0, Ap_local);
-
-    // r0 = b - Ax0
-    for (int i = 0; i < n_local; i++)
-    {
-        r_local[i] = b_local[i] - Ap_local[i];
-    }
-
-    // z0 = M^-1 * r0 (Jacobi preconditioner) M^-1 = diag(A)^-1
-    jacobi_preconditioner_z(diag_A_local, r_local, z_local, n_local, rank);
-
-    // p0 = z0
-    for (int i = 0; i < n_local; i++)
-    {
-        p_local[i] = z_local[i];
-    }
-
-    // ||r0||^2
-    rsn0 = 0.0;
-    for (int i = 0; i < n_local; i++)
-    {
-        rsn0 += r_local[i] * r_local[i];
-    }
-
-    // rtz0 = r0^T * z0
-    rtzold = 0.0;
-    for (int i = 0; i < n_local; i++)
-    {
-        rtzold += r_local[i] * z_local[i];
-    }
-
-    // Global reductions for rsn0 and rtz0 combined
-    double rsn0_rtzold_sum[2] = {rsn0, rtzold};
-    MPI_Allreduce(MPI_IN_PLACE, rsn0_rtzold_sum, 2, MPI_DOUBLE, MPI_SUM, comm);
-    rsn0 = rsn0_rtzold_sum[0];
-    rtzold = rsn0_rtzold_sum[1];
-
-    // Status of the solver for convergence
-    typedef enum
-    {
-        CG_NOT_CONVERGED = 0,
-        CG_CONVERGED_RESIDUAL = 1,
-        CG_BREAKDOWN_PAP = 2,
-        CG_BREAKDOWN_RTZ = 3
-    } cg_status_t;
-
-    cg_status_t status = CG_NOT_CONVERGED;
-
-    // Main iteration loop
-    for (int k = 0; k < max_iter; k++)
-    {
-        // Gather p_local to p (global)
-        // communication bottleneck here
-        MPI_Allgatherv(p_local, n_local, MPI_DOUBLE, p, recvcounts, displs, MPI_DOUBLE, comm);
-
-        // A = A * p
-        csr_sparse_matvec_mult_local(A_local, p, Ap_local);
-
-        // alpha = rtz / (p^T * Ap)
-        double pAp = 0.0;
-        for (int i = 0; i < n_local; i++)
-        {
-            pAp += p_local[i] * Ap_local[i];
-        }
-
-        MPI_Allreduce(MPI_IN_PLACE, &pAp, 1, MPI_DOUBLE, MPI_SUM, comm);
-
-        if (fabs(pAp) < 1e-20)
-        {
-            fprintf(stderr, "[rank %d] Error: Division by zero encountered in iteration %d.\n", rank, k);
-            fflush(stderr);
-            status = CG_BREAKDOWN_PAP;
-            break; // Exit the loop to prevent division by zero
-        }
-
-        // global value of alpha
-        alpha = rtzold / pAp;
-
-        // xk+1 = xk + alpha * pk
-        for (int i = 0; i < n_local; i++)
-        {
-            x_local[i] += alpha * p_local[i];
-        }
-
-        // rk+1 = rk - alpha * Apk
-        for (int i = 0; i < n_local; i++)
-        {
-            r_local[i] -= alpha * Ap_local[i];
-        }
-
-        // zk+1 = M^-1 * rk+1 (Jacobi preconditioner)
-        jacobi_preconditioner_z(diag_A_local, r_local, z_local, n_local, rank);
-
-        // rsnnew = r^T * r
-        rsnnew = 0.0;
-        for (int i = 0; i < n_local; i++)
-        {
-            rsnnew += r_local[i] * r_local[i];
-        }
-
-        // rtznew = r^T * z
-        rtznew = 0.0;
-        for (int i = 0; i < n_local; i++)
-        {
-            rtznew += r_local[i] * z_local[i];
-        }
-
-        // Global reductions for rsnnew and rtznew combined
-        double sums[2] = {rsnnew, rtznew};
-        MPI_Allreduce(MPI_IN_PLACE, sums, 2, MPI_DOUBLE, MPI_SUM, comm);
-        rsnnew = sums[0];
-        rtznew = sums[1];
-
-        // Check for convergence
-        // for efficiency, we use the relative convergence criterion without computing square roots
-        // ||rk+1|| < tol * ||r0||
-        if (rsnnew < (tol * tol) * rsn0)
-        {
-            if (rank == 0)
-            {
-                fprintf(stdout, "[rank %d] Converged in %d iterations.\n", rank, k + 1);
-            }
-            fflush(stdout);
-            status = CG_CONVERGED_RESIDUAL;
-            break;
-        }
-
-        if (fabs(rtzold) < 1e-20)
-        {
-            fprintf(stderr, "[rank %d] Error: Division by zero encountered in iteration %d.\n", rank, k);
-            fflush(stderr);
-            status = CG_BREAKDOWN_RTZ;
-            break; // Exit the loop to prevent division by zero
-        }
-
-        // beta = rtznew / rtzold
-        beta = rtznew / rtzold;
-
-        // pk+1 = zk+1 + beta * pk
-        for (int i = 0; i < n_local; i++)
-        {
-            p_local[i] = z_local[i] + beta * p_local[i];
-        }
-
-        // Update rtzold for next iteration
-        rtzold = rtznew;
-    }
-
-    // Check if loop ended due to reaching max_iter
-    if (rank == 0)
-    {
-        if (status == CG_NOT_CONVERGED)
-            fprintf(stdout, "[rank %d] Reached maximum iterations (%d) without convergence.\n", rank, max_iter);
-        fflush(stdout);
-    }
 }

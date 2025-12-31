@@ -13,9 +13,6 @@ typedef struct
     int *row_ptr;     // Row pointer
 } CSR;
 
-// Rank 0 builds the full SPD matrix of size grid_size^3 x grid_size^3 in CSR format
-int csr_build_spd_full(CSR *A, int grid_size, int rank);
-
 // Distributes the CSR matrix A from rank 0 to all processes, each receiving its local part in A_local
 int csr_distribute(CSR *A, CSR *A_local, int n, int n_local, int row_start, int rank, int size, MPI_Comm comm);
 

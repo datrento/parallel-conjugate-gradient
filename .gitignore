@@ -12,6 +12,7 @@ build/
 logs/
 data/
 papers/
+output/
 
 # Object files
 *.o

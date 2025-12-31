@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include "utils.h"
+#include "dense_utils.h"
 #include <math.h>
 
 void jacobi_preconditioner_z(double *diag_A, double *r, double *z, int n);

@@ -5,10 +5,16 @@
 #include <math.h>
 #include <limits.h>
 #include <stddef.h>
-// #include <omp.h>
-#include <stddef.h>
 void verify_spd_properties(CSR *A, int rank)
 {
+    /***
+     * Verifies the symmetric positive definite (SPD) properties of the CSR matrix A.
+     * Checks for symmetry and diagonal dominance.
+     * Parameters:
+     *     A: pointer to CSR matrix
+     *     rank: MPI rank for logging purposes
+     * Returns: void
+     * **/
     int n = A->n;
 
     // Check diagonal dominance and symmetry
@@ -51,6 +57,7 @@ void verify_spd_properties(CSR *A, int rank)
             {
                 fprintf(stderr, "[rank %d] Symmetry violated:  (%d,%d) exists but (%d,%d) missing\n",
                         rank, i, col, col, i);
+                fflush(stderr);
             }
         }
 
@@ -59,18 +66,23 @@ void verify_spd_properties(CSR *A, int rank)
         {
             fprintf(stderr, "[rank %d] Warning: Row %d not strictly diagonally dominant:  diag=%f, sum=%f\n",
                     rank, i, diag_val, off_diag_sum);
+            fflush(stderr);
+            break;
         }
     }
 
-    printf("[rank %d] SPD verification complete\n", rank);
+    printf("[rank %d] SPD with diagonal dominance verification complete\n", rank);
     fflush(stdout);
 }
 void csr_get_diagonal_local(const CSR *A_local, double *diag_A_local, int rank)
 {
     /**
      * Extracts the diagonal elements from the local CSR matrix A_local.
-     * A_local: local CSR matrix
-     * diag_A_local: output array to store diagonal elements (size n_local)
+     * Parameters:
+     *     A_local: local CSR matrix
+     *     diag_A_local: output array to store diagonal elements (size n_local)
+     *     rank: MPI rank for logging purposes
+     * Returns: void
      */
     for (int r = 0; r < A_local->n_local; r++)
     {
@@ -103,11 +115,12 @@ void csr_sparse_matvec_mult_local(const CSR *A_local, const double *x_full, doub
 {
     /**
      * Performs sparse matrix-vector multiplication y_local = A_local * x_full
-     * A_local: local CSR matrix
-     * x_full: full input vector (size n)
-     * y_local: output vector (size n_local)
+     * Parameters:
+     *      A_local: local CSR matrix
+     *      x_full: full input vector (size n)
+     *      y_local: output vector (size n_local)
+     * Returns: void
      */
-    // #pragma omp parallel for schedule(static)
     for (int i = 0; i < A_local->n_local; i++)
     {
         double sum = 0.0;
@@ -123,7 +136,13 @@ void print_csr_memory_usage(int rank, size_t nnz, int n, const char *label)
 {
     /***
      * Prints the memory usage of a CSR matrix given its number of non-zero entries (nnz).
-     * rank - MPI rank for logging purposes
+     * Parameters:
+     *      rank - MPI rank for logging purposes
+     *      nnz - number of non-zero entries
+     *      n - number of rows/columns (square matrix)
+     *      label - label to identify the matrix (e.g., "local", "full")
+     * Returns: void
+     *
      ***/
     size_t int_size = sizeof(int);
     size_t double_size = sizeof(double);
@@ -151,6 +170,24 @@ int csr_distribute(
     int n_local, int row_start,
     int rank, int size, MPI_Comm comm)
 {
+    /***
+     * Distributes the CSR matrix A_full from rank 0 to all processes,
+     * each receiving its local part in A_local.
+     *
+     * Parameters:
+     *      A_full: Pointer to full CSR matrix on rank 0
+     *      A_local: Pointer to local CSR matrix to be filled
+     *      n: Global matrix size
+     *      n_local: Number of local rows for this process
+     *      row_start: Starting row index in global matrix for this process
+     *      rank: MPI rank
+     *      size: Number of MPI processes
+     *      comm: MPI communicator
+     *
+     * Returns:
+     *      0 on success, -1 on failure
+     *
+     ***/
 
     A_local->n = n;
 
@@ -316,178 +353,13 @@ int csr_distribute(
     return 0;
 }
 
-int csr_build_spd_full(CSR *A, int grid_size, int rank)
-{
-    /***
-     * Builds a symmetric positive definite (SPD) matrix in CSR format
-     * using a 7-point stencil for a 3D grid of size grid_size^3.
-     *
-     * Parameters:
-     *    A         :  Pointer to CSR structure to be filled
-     *    grid_size :  Size of the 3D grid (grid_size x grid_size x grid_size)
-     *
-     * Returns:
-     *    0 on success, -1 on failure
-     *
-     * Credits: adopted from hpcg benchmark c++ implementation https://github.com/hpcg-benchmark/hpcg and GitHub Copilot
-     ***/
-    int nx = grid_size;
-    int ny = grid_size;
-    int nz = grid_size;
-    int n = nx * ny * nz;
-
-    A->n = n;
-    A->n_local = n; // full matrix on rank 0
-    A->row_start = 0;
-
-    // Allocate row_ptr
-    A->row_ptr = (int *)malloc((n + 1) * sizeof(int));
-
-    if (!A->row_ptr)
-    {
-        fprintf(stderr, "[rank %d] Error allocating memory for row_ptr\n", rank);
-        fprintf(stderr, "[rank %d] n=%d requires %.2f GB for row_ptr\n",
-                rank, n, (n + 1) * sizeof(int) / (1024.0 * 1024.0 * 1024.0));
-        fflush(stderr);
-        return -1;
-    }
-
-    // First pass: count non-zeros per row and build row_ptr
-    size_t nnz = 0;
-    for (int iz = 0; iz < nz; iz++)
-    {
-        for (int iy = 0; iy < ny; iy++)
-        {
-            for (int ix = 0; ix < nx; ix++)
-            {
-                int row = iz * nx * ny + iy * nx + ix;
-                A->row_ptr[row] = (int)nnz;
-
-                int count = 0;
-                // Loop over 7-point stencil (face neighbors only)
-                for (int sz = -1; sz <= 1; sz++)
-                {
-                    for (int sy = -1; sy <= 1; sy++)
-                    {
-                        for (int sx = -1; sx <= 1; sx++)
-                        {
-                            // Only include center and axis-aligned neighbors
-                            int num_nonzero = (sz != 0 ? 1 : 0) + (sy != 0 ? 1 : 0) + (sx != 0 ? 1 : 0);
-                            if (num_nonzero > 1)
-                                continue; // Skip diagonal/edge/corner neighbors
-
-                            int iz_n = iz + sz;
-                            int iy_n = iy + sy;
-                            int ix_n = ix + sx;
-
-                            if (iz_n >= 0 && iz_n < nz &&
-                                iy_n >= 0 && iy_n < ny &&
-                                ix_n >= 0 && ix_n < nx)
-                            {
-                                count++; // Valid neighbor
-                            }
-                        }
-                    }
-                }
-                nnz += count;
-            }
-        }
-    }
-    A->row_ptr[n] = (int)nnz;
-
-    if (nnz > INT_MAX)
-    {
-        fprintf(stderr, "[rank %d] Error: nnz=%zu exceeds INT_MAX\n", rank, nnz);
-        fflush(stderr);
-        free(A->row_ptr);
-        return -1;
-    }
-
-    A->nnz = (int)nnz;
-
-    // Allocate col_indices and values
-    A->col_indices = (int *)malloc(A->nnz * sizeof(int));
-    A->values = (double *)malloc(A->nnz * sizeof(double));
-    if (!A->col_indices || !A->values)
-    {
-        // log error and free previously allocated memory
-        fprintf(stderr, "[rank %d] Error:  Memory allocation failed for col_indices or values\n", rank);
-        fprintf(stderr, "[rank %d] nnz=%zu requires %.2f GB for col_indices and %.2f GB for values\n",
-                rank, nnz, nnz * sizeof(int) / (1024.0 * 1024.0 * 1024.0), nnz * sizeof(double) / (1024.0 * 1024.0 * 1024.0));
-
-        // number of bytes allocated so far
-        fprintf(stderr, "[rank %d] Allocated %.2f GB for row_ptr\n",
-                rank, (n + 1) * sizeof(int) / (1024.0 * 1024.0 * 1024.0));
-        fflush(stderr);
-        free(A->row_ptr);
-        return -1;
-    }
-
-    // Second pass:  fill entries with strict diagonal dominance
-    // diagonal = (number of off-diagonal neighbors) + 0.1, off-diagonal = -1.0
-    for (int iz = 0; iz < nz; iz++)
-    {
-        for (int iy = 0; iy < ny; iy++)
-        {
-            for (int ix = 0; ix < nx; ix++)
-            {
-                int row = iz * nx * ny + iy * nx + ix;
-                size_t pos = A->row_ptr[row];
-
-                int num_neighbors = 0; // Count actual off-diagonal neighbors
-                size_t diag_pos = 0;   // Track position of diagonal entry
-
-                // Loop over 7-point stencil (face neighbors only)
-                for (int sz = -1; sz <= 1; sz++)
-                {
-                    for (int sy = -1; sy <= 1; sy++)
-                    {
-                        for (int sx = -1; sx <= 1; sx++)
-                        {
-                            // Only include center and axis-aligned neighbors
-                            int num_nonzero = (sz != 0 ? 1 : 0) + (sy != 0 ? 1 : 0) + (sx != 0 ? 1 : 0);
-                            if (num_nonzero > 1)
-                                continue; // Skip diagonal neighbors
-
-                            int iz_n = iz + sz;
-                            int iy_n = iy + sy;
-                            int ix_n = ix + sx;
-
-                            if (iz_n >= 0 && iz_n < nz &&
-                                iy_n >= 0 && iy_n < ny &&
-                                ix_n >= 0 && ix_n < nx)
-                            {
-                                int col = iz_n * nx * ny + iy_n * nx + ix_n;
-                                A->col_indices[pos] = col;
-
-                                if (col == row)
-                                {
-                                    diag_pos = pos; // Remember where diagonal is
-                                }
-                                else
-                                {
-                                    A->values[pos] = -1.0; // Off-diagonal
-                                    num_neighbors++;
-                                }
-                                pos++;
-                            }
-                        }
-                    }
-                }
-
-                // Set diagonal = number of off-diagonal neighbors + epsilon for strict dominance
-                A->values[diag_pos] = (double)num_neighbors + 0.1;
-            }
-        }
-    }
-
-    return 0;
-}
-
 void csr_free(CSR *A)
 {
     /***
      * Frees the memory allocated for the CSR matrix A.
+     * Parameters:
+     *      A: Pointer to CSR structure to be freed
+     * Returns: void
      ***/
     if (A)
     {
@@ -521,6 +393,12 @@ void export_csr_to_mtx(const char *filename, CSR *A, int n, int rank)
     /***
      * Exports a CSR matrix A to a Matrix Market (.mtx) file.
      * so it would be easy to read in python and verify correctness of SPD matrix properties
+     * Parameters:
+     *      filename: output file name
+     *      A: pointer to CSR matrix
+     *      n: global matrix size
+     *      rank: MPI rank for logging purposes
+     * Returns: void
      ***/
 
     FILE *f = fopen(filename, "w");
@@ -531,8 +409,8 @@ void export_csr_to_mtx(const char *filename, CSR *A, int n, int rank)
         return;
     }
 
-    // Write Matrix Market header
-    fprintf(f, "%%MatrixMarket matrix coordinate real symmetric\n");
+    // Write Matrix Market header (general format since i store both (i,j) and (j,i) explicitly)
+    fprintf(f, "%%MatrixMarket matrix coordinate real general\n");
     fprintf(f, "%d %d %d\n", n, n, A->nnz);
 
     // Write non-zero entries
