@@ -33,7 +33,7 @@ for grid in "${grid_sizes[@]}"; do
       echo "Running grid=$grid np=$np at $(date +%H:%M:%S)"
     else
       # Multiple reps - include rep prefix
-      output_log="logs/rep${REP}_grid${grid}_np${np}. log"
+      output_log="logs/rep${REP}_grid${grid}_np${np}.log"
       error_log="logs/rep${REP}_grid${grid}_np${np}.err"
       echo "[Rep ${REP}] Running grid=$grid np=$np at $(date +%H:%M:%S)"
     fi
