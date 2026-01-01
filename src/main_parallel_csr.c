@@ -34,8 +34,9 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    double initial_guess = 0.0;
-    int n = grid_size * grid_size * grid_size;
+    double initial_guess = 0.0;                // initial guess for x0
+    double known_solution_value = 2.0;         // known solution value for verification
+    int n = grid_size * grid_size * grid_size; // problem size
 
     // this never be triggered due to prior validation, but just in case
     if (n <= 0)
@@ -53,7 +54,7 @@ int main(int argc, char *argv[])
     int remainder = n % size;
 
     // flag to export csr matrix from rank 0 for verification of SPD properties
-    int export_csr = 1;
+    int export_csr = 0; // set to 1 to export the csr matrix to mtx file
 
     // Optimization parameters for Conjugate Gradient
     int max_iter = 1000;
@@ -111,7 +112,6 @@ int main(int argc, char *argv[])
         }
 
         // check SPD properties of the full matrix on rank 0
-        // if (export_csr > 0)
         verify_spd_properties(&A_full, rank);
 
         // Debug: print memory usage of full CSR matrix on rank 0
@@ -126,7 +126,7 @@ int main(int argc, char *argv[])
         }
 
         // export csr matrix to mtx for verification of SPD properties before freeing
-        if (export_csr > 0)
+        if (export_csr > 0 && grid_size <= 10) // limit size to avoid huge files
             export_csr_to_mtx(mtx_filename, &A_full, n, rank);
 
         // free the full matrix in CSR format on rank 0
@@ -153,53 +153,26 @@ int main(int argc, char *argv[])
         MPI_Abort(comm, EXIT_FAILURE);
     }
 
-    // Allocate x0 in each process (initial guess)
-    x0 = (double *)malloc(n * sizeof(double));
-
-    if (!x0)
+    // Initialize x_local and b_local on each process
+    for (int i = 0; i < n_local; i++)
     {
-        fprintf(stderr, "[rank %d] Error allocating global vector x0 of size %d\n", rank, n);
-        fflush(stderr);
-        MPI_Abort(comm, EXIT_FAILURE);
-    }
-    // Initialize x0 and b on rank 0
-    for (int i = 0; i < n; i++)
-    {
-        x0[i] = initial_guess; // initial guess x0 as zero vector
+        x_local[i] = initial_guess; // initial guess as zero vector
+        b_local[i] = 0.0;
     }
 
-    // Broadcast x0 to all processes (initial guess) to allocate after freeing A_full on rank 0
-    // MPI_Bcast(x0, n, MPI_DOUBLE, 0, comm); // initial guess
-
-    // Build b = A * x_known where x_known is a vector of specific values (e.g., all 2.0)
-    double *x_known = (double *)malloc(n * sizeof(double));
-
-    if (!x_known)
+    // b_local = A_local * x_known on each process and stores in b_local
+    for (int i = 0; i < n_local; i++)
     {
-        fprintf(stderr, "[rank %d] Error allocating x_known of size %d\n", rank, n);
-        fflush(stderr);
-        MPI_Abort(comm, EXIT_FAILURE);
+        double row_sum = 0.0;
+        for (int j = A_local.row_ptr[i]; j < A_local.row_ptr[i + 1]; j++)
+        {
+            row_sum += A_local.values[j];
+        }
+        b_local[i] = row_sum * known_solution_value; // b_local = A_local * x_known_local
     }
-
-    // initialize x_known to all ranks
-    for (int i = 0; i < n; i++)
-    {
-        x_known[i] = 2.0;
-    }
-
-    // b = A * x_known using local sparse matvec multiplication each process computes its local part
-    // and stores in b_local
-    csr_sparse_matvec_mult_local(&A_local, x_known, b_local);
-    free(x_known);
 
     // get diagonal elements from local CSR matrix
     csr_get_diagonal_local(&A_local, diag_A_local, rank);
-
-    // initialize local x from x0
-    for (int i = 0; i < n_local; i++)
-    {
-        x_local[i] = x0[row_start + i];
-    }
 
     // Precompute recvcounts and displs for variable-lenghth gatherv
     int *recvcounts = (int *)malloc(size * sizeof(int));
@@ -251,6 +224,14 @@ int main(int argc, char *argv[])
     {
         printf("[rank %d] Completed Jacobi Preconditioned Conjugate Gradient solver.\n", rank);
         fflush(stdout);
+    }
+
+    x0 = (double *)malloc(n * sizeof(double)); // allocate x0 to gather full solution
+    if (!x0)
+    {
+        fprintf(stderr, "[rank %d] Error allocating global solution vector x0 of size %d\n", rank, n);
+        fflush(stderr);
+        MPI_Abort(comm, EXIT_FAILURE);
     }
 
     //  Gather the local x (solution) to x0 in all processes

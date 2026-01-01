@@ -65,13 +65,41 @@ void jacobi_preconditioned_conjugate_gradient(
     // intermediate scalars
     double alpha = 0.0, beta = 0.0, rsn0 = 0.0, rsnnew = 0.0, rtzold = 0.0, rtznew = 0.0;
 
-    // Ap_local = A_local * x0 use Ap_local as temporary storage for Ax0_local( to resuse the buffer later)
-    csr_sparse_matvec_mult_local(A_local, x0, Ap_local);
-
-    // r0 = b - Ax0
-    for (int i = 0; i < n_local; i++)
+    // Status of the solver for convergence
+    typedef enum
     {
-        r_local[i] = b_local[i] - Ap_local[i];
+        CG_NOT_CONVERGED = 0,
+        CG_CONVERGED_RESIDUAL = 1,
+        CG_BREAKDOWN_PAP = 2,
+        CG_BREAKDOWN_RTZ = 3
+    } cg_status_t;
+
+    cg_status_t status = CG_NOT_CONVERGED;
+
+    if (x0) // non-zero initial guess in case x0 is provided
+    {
+        // Ap_local = A_local * x0 use Ap_local as temporary storage for Ax0_local( to resuse the buffer later)
+        csr_sparse_matvec_mult_local(A_local, x0, Ap_local);
+
+        // r0 = b - Ax0
+        for (int i = 0; i < n_local; i++)
+        {
+            r_local[i] = b_local[i] - Ap_local[i];
+        }
+    }
+    else
+    {
+        // if initial guess is zero, Ap_local = 0
+        for (int i = 0; i < n_local; i++)
+        {
+            Ap_local[i] = 0.0;
+        }
+
+        // r0 = b - 0 = b
+        for (int i = 0; i < n_local; i++)
+        {
+            r_local[i] = b_local[i];
+        }
     }
 
     // z0 = M^-1 * r0 (Jacobi preconditioner) M^-1 = diag(A)^-1
@@ -102,17 +130,6 @@ void jacobi_preconditioned_conjugate_gradient(
     MPI_Allreduce(MPI_IN_PLACE, rsn0_rtzold_sum, 2, MPI_DOUBLE, MPI_SUM, comm);
     rsn0 = rsn0_rtzold_sum[0];
     rtzold = rsn0_rtzold_sum[1];
-
-    // Status of the solver for convergence
-    typedef enum
-    {
-        CG_NOT_CONVERGED = 0,
-        CG_CONVERGED_RESIDUAL = 1,
-        CG_BREAKDOWN_PAP = 2,
-        CG_BREAKDOWN_RTZ = 3
-    } cg_status_t;
-
-    cg_status_t status = CG_NOT_CONVERGED;
 
 #if PCG_ENABLE_OVERLAP
     const int row_start = displs[rank];
