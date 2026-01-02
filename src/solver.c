@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include "halo_exchange.h"
 
 static void jacobi_preconditioner_z(double *diag_A, double *r, double *z, int n, int rank)
 {
@@ -76,6 +77,30 @@ void jacobi_preconditioned_conjugate_gradient(
 
     cg_status_t status = CG_NOT_CONVERGED;
 
+    // --------------------------------------------------------
+
+#if PCG_ENABLE_OVERLAP || PCG_USE_GHOST_EXCHANGE
+
+    const int row_start = displs[rank];
+    const int row_end = row_start + n_local;
+#endif
+
+#if PCG_USE_GHOST_EXCHANGE
+    // Build halo exchange structure (before CG loop)
+    HaloExchange halo;
+    int size;
+    MPI_Comm_size(comm, &size);
+
+    int halo_status = halo_exchange_build(&halo, A_local, n_local, row_start, row_end,
+                                          rank, size, n, comm);
+    if (halo_status != 0)
+    {
+        fprintf(stderr, "[rank %d] Failed to build halo exchange\n", rank);
+        return;
+    }
+#endif
+    // --------------------------------------------------------
+
     if (x0) // non-zero initial guess in case x0 is provided
     {
         // Ap_local = A_local * x0 use Ap_local as temporary storage for Ax0_local( to resuse the buffer later)
@@ -131,10 +156,10 @@ void jacobi_preconditioned_conjugate_gradient(
     rsn0 = rsn0_rtzold_sum[0];
     rtzold = rsn0_rtzold_sum[1];
 
-#if PCG_ENABLE_OVERLAP
-    const int row_start = displs[rank];
-    const int row_end = row_start + n_local;
-#endif
+    // #if PCG_ENABLE_OVERLAP
+    //     row_start = displs[rank];
+    //     row_end = row_start + n_local;
+    // #endif
 
     // Main iteration loop
     for (int k = 0; k < max_iter; k++)
@@ -158,10 +183,21 @@ void jacobi_preconditioned_conjugate_gradient(
         // Ap_local += A_local * p (remote contributions)
         csr_global_Ap_contribution(A_local, p, Ap_local, n_local, row_start, row_end);
 #else
-        // Standard blocking Allgatherv
+#if PCG_USE_GHOST_EXCHANGE
+        // NEW CODE:
+        // Exchange ghost values
+        halo_exchange_execute(&halo, p_local, comm);
+
+        // Compute SpMV using halo values
+        csr_spmv_halo(A_local, p_local, Ap_local, &halo, n_local,
+                      row_start, row_end);
+#else
+        // // Standard blocking Allgatherv
         MPI_Allgatherv(p_local, n_local, MPI_DOUBLE, p, recvcounts, displs, MPI_DOUBLE, comm);
-        // A = A * p
+        // // A = A * p
         csr_sparse_matvec_mult_local(A_local, p, Ap_local);
+#endif
+
 #endif
 
 // check if the Ap_local is valid
@@ -266,4 +302,9 @@ void jacobi_preconditioned_conjugate_gradient(
             fprintf(stdout, "[rank %d] Reached maximum iterations (%d) without convergence.\n", rank, max_iter);
         fflush(stdout);
     }
+
+#if PCG_USE_GHOST_EXCHANGE
+    // Free halo exchange structure
+    halo_exchange_free(&halo);
+#endif
 }

@@ -21,7 +21,8 @@ SOURCES = \
 	$(SRC_DIR)/solver.c \
 	$(SRC_DIR)/solver_utils.c \
 	$(SRC_DIR)/utils.c \
-	$(SRC_DIR)/csr_matrix_builder.c
+	$(SRC_DIR)/csr_matrix_builder.c \
+	$(SRC_DIR)/halo_exchange.c
 # $(SRC_DIR)/dense_utils.c but not used in CSR version
 
 
@@ -29,6 +30,7 @@ SOURCES = \
 overlap ?= 0
 debug ?= 0
 omp ?= 0
+ghost?=0
 
 DEFS :=
 ifeq ($(overlap),1)
@@ -42,6 +44,11 @@ ifeq ($(omp),1)
 	CFLAGS += -fopenmp
 	LDFLAGS += -fopenmp
 endif
+
+ifeq ($(ghost),1)
+	DEFS += -DUSE_GHOST_EXCHANGE 
+endif
+
 
 # PBS Script in root
 PBS_SCRIPT = run_single_rep.sh
@@ -132,7 +139,8 @@ my_jobs:
 
 # disable this in the cluster environment
 local_run: compile
-	mpirun -n 4 $(TARGET) 10 > $(LOGS_DIR)/local_run_out.log 2> $(LOGS_DIR)/local_run_err.log
+	mpirun -n 8 $(TARGET) 300 
+# 	> $(LOGS_DIR)/local_run_out.log 2> $(LOGS_DIR)/local_run_err.log
 	@echo "Local run completed. Output in $(LOGS_DIR)/local_run_out.log, errors in $(LOGS_DIR)/local_run_err.log"
 
 # Clean everything generated

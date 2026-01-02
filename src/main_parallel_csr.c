@@ -143,15 +143,32 @@ int main(int argc, char *argv[])
         }
     }
 
+#ifdef USE_GHOST_EXCHANGE
+    p = NULL; // do not allocate global p vector in each process
+    if (rank == 0)
+    {
+        printf("[Halo Optimization] Using ghost exchange - NOT allocating global p vector\n");
+        printf("[Halo Optimization] Memory saved per rank: %.2f GB\n",
+               n * sizeof(double) / (1024.0 * 1024.0 * 1024.0));
+        fflush(stdout);
+    }
+#else
     // Allocate global vectors in each process
     p = (double *)malloc(n * sizeof(double)); // global p vector for Allgather
-
     if (!p)
     {
         fprintf(stderr, "[rank %d] Error allocating global vector p of size %d\n", rank, n);
         fflush(stderr);
         MPI_Abort(comm, EXIT_FAILURE);
     }
+
+    if (rank == 0)
+    {
+        printf("[Standard Mode] Allocated global p vector:  %.2f GB per rank\n",
+               n * sizeof(double) / (1024.0 * 1024.0 * 1024.0));
+        fflush(stdout);
+    }
+#endif
 
     // Initialize x_local and b_local on each process
     for (int i = 0; i < n_local; i++)
@@ -173,6 +190,10 @@ int main(int argc, char *argv[])
 
     // get diagonal elements from local CSR matrix
     csr_get_diagonal_local(&A_local, diag_A_local, rank);
+
+    // Analyze communication pattern for SpMV
+    analyze_communication_pattern(&A_local, n_local, row_start, row_start + n_local,
+                                  rank, size, n);
 
     // Precompute recvcounts and displs for variable-lenghth gatherv
     int *recvcounts = (int *)malloc(size * sizeof(int));
