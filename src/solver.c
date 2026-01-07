@@ -5,35 +5,20 @@
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
-__attribute__((unused)) static void log_convergence(int rank, int iter, double res_norm, double r0_norm)
+__attribute__((unused)) static void log_convergence(int rank, int iter, double res_norm, double r0_norm, const char *alg_name)
 {
-    double relative_res = res_norm / r0_norm;
     // Debug: print norms every 5 iterations
     if (iter % 5 == 0 && rank == 0)
     {
-        printf("[rank %d]Iteration %d: residual %e\n", rank, iter, res_norm);
-        fflush(stdout);
-
-        // log in file for post-analysis
-        const char *log_filename = "output/jcgresnorms.txt";
-        // check if file exists to decide whether to write header
-        FILE *check_file = fopen(log_filename, "r");
-        int file_exists = 0;
-        if (check_file)
-        {
-            file_exists = 1;
-            fclose(check_file);
-        }
+        char log_filename[256];
+        snprintf(log_filename, sizeof(log_filename), "output/residual_%s.txt", alg_name);
 
         FILE *log_file = fopen(log_filename, "a");
-
-        if (!file_exists)
-        {
-            fprintf(log_file, "#iteration residual_norm\n");
-        }
         if (log_file)
         {
-            fprintf(log_file, "%d %e\n", iter, relative_res);
+            if (iter == 0)
+                fprintf(log_file, "#iteration residual_norm\n");
+            fprintf(log_file, "%d %e\n", iter, res_norm / r0_norm);
             fclose(log_file);
         }
     }
@@ -187,7 +172,7 @@ void jacobi_preconditioned_cg(
         }
 
 #ifdef DEBUG
-        log_convergence(rank, k, sqrt(rsnnew), sqrt(rsn0));
+        log_convergence(rank, k, sqrt(rsnnew), sqrt(rsn0), "baseline");
 #endif
 
         double beta = rtznew / rtzold;
@@ -364,7 +349,7 @@ void jacobi_preconditioned_pipelined_cg(
         }
 
 #ifdef DEBUG
-        log_convergence(rank, itr, sqrt(gamma), r0_norm);
+        log_convergence(rank, itr, sqrt(gamma), r0_norm, "pipelined");
 #endif
 
         // gamma := (r_i, u_i), delta := (w_i, u_i)
