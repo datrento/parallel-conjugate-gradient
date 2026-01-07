@@ -2,25 +2,53 @@
 #include <mpi.h>
 #include <stddef.h>
 
+/**
+ * Compressed Sparse Row (CSR) matrix structure with Jacobi preconditioning support.
+ * Members:
+ *     n: Global number of rows
+ *     n_local: Number of local rows
+ *     row_start: Global row start index
+ *     nnz: Number of non-zero entries (local)
+ *     row_ptr: CSR row pointers
+ *     col_indices: CSR column indices
+ *     values: CSR non-zero values
+ *     inv_diag: Inverse of diagonal elements (for Jacobi preconditioning)
+ */
 typedef struct
 {
-    int n;            // Global Number of rows
+    int n;            // Global number of rows
     int n_local;      // Number of local rows
-    int row_start;    // Starting row index in global matrix per process
+    int row_start;    // Global row start index
     int nnz;          // Number of non-zero entries (local)
-    double *values;   // Non-zero values
-    int *col_indices; // Column indices of non-zero values
-    int *row_ptr;     // Row pointer
+    int *row_ptr;     // CSR row pointers
+    int *col_indices; // CSR column indices
+    double *values;   // CSR non-zero values
+    double *inv_diag; // Inverse of diagonal elements (for Jacobi preconditioning)
 } CSR;
 
-// Distributes the CSR matrix A from rank 0 to all processes, each receiving its local part in A_local
-int csr_distribute(CSR *A, CSR *A_local, int n, int n_local, int row_start, int rank, int size, MPI_Comm comm);
+/**
+ * Structure to hold 3D grid information for domain decomposition.
+ * Members:
+ *     nx, ny, nz: Global grid dimensions
+ *     local_nz: Local z-dimension size (number of z-planes assigned to this process)
+ *     z_start: Starting z-index for this process
+ *     up, down: Neighboring process ranks since sliced in z-direction
+ */
+typedef struct
+{
+    int nx, ny, nz; // Global grid dimensions
+    int local_nz;   // Local z-dimension size (number of z-planes assigned to this process)
+    int z_start;    // Starting z-index for this process (global index of the first local z-plane)
+    int up, down;   // Neighboring process ranks since sliced in z-direction
+} Grid3D;
 
-// SpMV: y_local = A_local * x
+// SpMV: y = A * x for internal rows only (no halos needed)
+void csr_sparse_matvec_mult_internal(CSR *A, Grid3D *G, double *x, double *y);
+// SpMV: y = A * x for boundary rows only (requires halos)
+void csr_sparse_matvec_mult_boundary(CSR *A, Grid3D *G, double *x, double *halo_up, double *halo_down, double *y);
+
+// SpMV: y_local = A_local * x full (no halos needed) (used for solution verification and jacobi preconditioned cg)
 void csr_sparse_matvec_mult_local(const CSR *A_local, const double *x_full, double *y_local);
-
-// Extracts the diagonal elements from the local CSR matrix A_local.
-void csr_get_diagonal_local(const CSR *A_local, double *diag_A_local, int rank);
 
 void print_csr_memory_usage(int rank, size_t nnz, int n_local, const char *label);
 
