@@ -2,6 +2,7 @@
 #PBS -N verify_CG_correctness
 #PBS -l select=4:ncpus=96:mpiprocs=96:mem=192gb
 #PBS -l place=scatter:excl
+#PBS -l walltime=01:00:00
 #PBS -q short_HPC4DS
 #PBS -j oe
 
