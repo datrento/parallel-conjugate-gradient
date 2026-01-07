@@ -1,7 +1,7 @@
 #!/bin/bash
 #PBS -N conjugate_gradient_job
-#PBS -l select=32:ncpus=1:mem=192gb -l place=scatter:excl
-#PBS -l walltime=04:00:00
+#PBS -l select=32:ncpus=96:mem=192gb -l place=scatter:excl
+#PBS -l walltime=06:00:00
 #PBS -q short_HPC4DS
 #PBS -j oe
 
@@ -39,7 +39,7 @@ for grid in "${grid_sizes[@]}"; do
     fi
     
     # Run the program
-    mpirun.actual -n "$np" ./build/main_parallel_csr "$grid" \
+    mpirun.actual -n "$np" --bind-to core ./build/main_parallel_csr "$grid" \
       > "$output_log" \
       2> "$error_log"
     

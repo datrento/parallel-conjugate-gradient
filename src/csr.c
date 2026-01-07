@@ -74,47 +74,12 @@ void verify_spd_properties(CSR *A, int rank)
     printf("[rank %d] SPD with diagonal dominance verification complete\n", rank);
     fflush(stdout);
 }
-void csr_get_diagonal_local(const CSR *A_local, double *diag_A_local, int rank)
-{
-    /**
-     * Extracts the diagonal elements from the local CSR matrix A_local.
-     * Parameters:
-     *     A_local: local CSR matrix
-     *     diag_A_local: output array to store diagonal elements (size n_local)
-     *     rank: MPI rank for logging purposes
-     * Returns: void
-     */
-    for (int r = 0; r < A_local->n_local; r++)
-    {
-        int global_row = A_local->row_start + r;
-
-        double diag_value = 0.0;
-
-        // diagonal entry (where col_index == global_row)
-        for (int j = A_local->row_ptr[r]; j < A_local->row_ptr[r + 1]; j++)
-        {
-            if (A_local->col_indices[j] == global_row)
-            {
-                diag_value = A_local->values[j];
-                break;
-            }
-        }
-
-        if (diag_value == 0.0)
-        {
-            fprintf(stderr, "[rank %d]Warning: Zero diagonal entry found at global row %d\n", rank, global_row);
-            fflush(stderr);
-            MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE); // since it's called by multiple places
-        }
-
-        diag_A_local[r] = diag_value;
-    }
-}
 
 void csr_sparse_matvec_mult_local(const CSR *A_local, const double *x_full, double *y_local)
 {
     /**
      * Performs sparse matrix-vector multiplication y_local = A_local * x_full
+     * used for local SpMV where the full vector x is available: no halos needed
      * Parameters:
      *      A_local: local CSR matrix
      *      x_full: full input vector (size n)
@@ -165,194 +130,6 @@ void print_csr_memory_usage(int rank, size_t nnz, int n, const char *label)
     fflush(stdout);
 }
 
-int csr_distribute(
-    CSR *A_full, CSR *A_local, int n,
-    int n_local, int row_start,
-    int rank, int size, MPI_Comm comm)
-{
-    /***
-     * Distributes the CSR matrix A_full from rank 0 to all processes,
-     * each receiving its local part in A_local.
-     *
-     * Parameters:
-     *      A_full: Pointer to full CSR matrix on rank 0
-     *      A_local: Pointer to local CSR matrix to be filled
-     *      n: Global matrix size
-     *      n_local: Number of local rows for this process
-     *      row_start: Starting row index in global matrix for this process
-     *      rank: MPI rank
-     *      size: Number of MPI processes
-     *      comm: MPI communicator
-     *
-     * Returns:
-     *      0 on success, -1 on failure
-     *
-     ***/
-
-    A_local->n = n;
-
-    // Compute row distribution for All ranks
-    int base = n / size;
-    int remainder = n % size;
-    A_local->n_local = n_local;
-    A_local->row_start = row_start; // starting row index in global matrix
-
-    // Step 1: Scatter row_ptr segments
-    int *local_row_ptr_temp = (int *)malloc((A_local->n_local + 1) * sizeof(int));
-
-    if (!local_row_ptr_temp)
-    {
-        fprintf(stderr, "[rank %d] Error allocating memory for local_row_ptr_temp\n", rank);
-        fflush(stderr);
-        return -1;
-    }
-
-    if (rank == 0)
-    {
-        // Prepare sendcounts and displs for row_ptr
-        int *sendcounts = (int *)malloc(size * sizeof(int));
-        int *displs = (int *)malloc(size * sizeof(int));
-
-        if (!sendcounts || !displs)
-        {
-            fprintf(stderr, "[rank %d] Error allocating memory for sendcounts or displs\n", rank);
-            fflush(stderr);
-            free(local_row_ptr_temp);
-            return -1;
-        }
-
-        for (int i = 0; i < size; i++)
-        {
-            int start = i * base + (i < remainder ? i : remainder);
-            int count = ((i < remainder) ? (base + 1) : base);
-            sendcounts[i] = count + 1; // +1 for row_ptr
-            displs[i] = start;
-        }
-
-        // Distribute A_full->row_ptr to all ranks' local_row_ptr_temp
-        MPI_Scatterv(A_full->row_ptr, sendcounts, displs, MPI_INT,
-                     local_row_ptr_temp, A_local->n_local + 1, MPI_INT,
-                     0, comm);
-
-        // Free allocation arrays
-        free(sendcounts);
-        free(displs);
-    }
-    else
-    {
-        // Receive row_ptr segments
-        MPI_Scatterv(NULL, NULL, NULL, MPI_INT,
-                     local_row_ptr_temp, A_local->n_local + 1, MPI_INT,
-                     0, comm);
-    }
-
-    // Adjust local_row_ptr to start from 0 for each rank and compute local nnz(non zeros)
-    int nnz_offset = local_row_ptr_temp[0];
-    A_local->nnz = local_row_ptr_temp[A_local->n_local] - nnz_offset;
-
-    // Allocate A_local->row_ptr to store adjusted row_ptr
-    A_local->row_ptr = (int *)malloc((A_local->n_local + 1) * sizeof(int));
-
-    // Check allocation success
-    if (!A_local->row_ptr)
-    {
-        fprintf(stderr, "[rank %d] Error allocating memory for local row_ptr\n", rank);
-        free(local_row_ptr_temp);
-        return -1;
-    }
-
-    // Adjust A_local->row_ptr to start from 0 for each rank
-    for (int i = 0; i < A_local->n_local + 1; i++)
-    {
-        A_local->row_ptr[i] = local_row_ptr_temp[i] - nnz_offset;
-    }
-
-    // Free temporary local_row_ptr storage
-    free(local_row_ptr_temp);
-
-    // Step 2: Scatter col_indices and values based on each rank's nnz
-    // allocate col_indices and values for A_local
-    A_local->col_indices = (int *)malloc(A_local->nnz * sizeof(int));
-    A_local->values = (double *)malloc(A_local->nnz * sizeof(double));
-
-    if (!A_local->col_indices)
-    {
-        fprintf(stderr, "[rank %d] malloc failed for col_indices (need %d ints = %.2f MB)\n",
-                rank, A_local->nnz, A_local->nnz * sizeof(int) / (1024.0 * 1024.0));
-        free(A_local->row_ptr);
-        return -1;
-    }
-
-    if (!A_local->values)
-    {
-        fprintf(stderr, "[rank %d] malloc failed for values (need %d doubles = %.2f MB)\n",
-                rank, A_local->nnz, A_local->nnz * sizeof(double) / (1024.0 * 1024.0));
-        free(A_local->row_ptr);
-        free(A_local->col_indices);
-        return -1;
-    }
-
-    // Print memory usage for local CSR matrix per rank
-    print_csr_memory_usage(rank, A_local->nnz, A_local->n_local, "local");
-
-    if (rank == 0)
-    {
-        // Prepare sendcounts and displs for col_indices and values
-        int *sendcounts_nnz = (int *)malloc(size * sizeof(int));
-        int *displs_nnz = (int *)malloc(size * sizeof(int));
-
-        if (!sendcounts_nnz || !displs_nnz)
-        {
-            fprintf(stderr, "[rank %d] Error allocating memory for sendcounts_nnz or displs_nnz\n", rank);
-            fflush(stderr);
-            free(A_local->row_ptr);
-            free(A_local->col_indices);
-            free(A_local->values);
-            return -1;
-        }
-
-        for (int i = 0; i < size; i++)
-        {
-            // let say remainder = 2, base = 3, size = 5
-            // p0_start = 0 * 3 + 0 = 0,    count = 4 => sendcounts_nnz[0] = 4
-            // p1_start = 1 * 3 + 1 = 4,    count = 4 => sendcounts_nnz[1] = 4
-            // p2_start = 2 * 3 + 2 = 8,    count = 3 => sendcounts_nnz[2] = 3
-            // p3_start = 3 * 3 + 2 = 11,   count = 3 => sendcounts_nnz[3] = 3
-            // p4_start = 4 * 3 + 2 = 14,   count = 3 => sendcounts_nnz[4] = 3
-            int start = i * base + (i < remainder ? i : remainder);
-            int count = ((i < remainder) ? (base + 1) : base);
-            sendcounts_nnz[i] = A_full->row_ptr[start + count] - A_full->row_ptr[start]; // start to end nnz for this rank
-            displs_nnz[i] = A_full->row_ptr[start];
-        }
-
-        // Distribute col_indices and values to all ranks' A_local
-        MPI_Scatterv(A_full->col_indices, sendcounts_nnz, displs_nnz, MPI_INT,
-                     A_local->col_indices, A_local->nnz, MPI_INT,
-                     0, comm);
-
-        MPI_Scatterv(A_full->values, sendcounts_nnz, displs_nnz, MPI_DOUBLE,
-                     A_local->values, A_local->nnz, MPI_DOUBLE,
-                     0, comm);
-
-        // Free allocation arrays
-        free(sendcounts_nnz);
-        free(displs_nnz);
-    }
-    else
-    {
-        // Receive col_indices and values
-        MPI_Scatterv(NULL, NULL, NULL, MPI_INT,
-                     A_local->col_indices, A_local->nnz, MPI_INT,
-                     0, comm);
-
-        MPI_Scatterv(NULL, NULL, NULL, MPI_DOUBLE,
-                     A_local->values, A_local->nnz, MPI_DOUBLE,
-                     0, comm);
-    }
-
-    return 0;
-}
-
 void csr_free(CSR *A)
 {
     /***
@@ -379,6 +156,12 @@ void csr_free(CSR *A)
             free(A->values);
             A->values = NULL;
         }
+
+        if (A->inv_diag)
+        {
+            free(A->inv_diag);
+            A->inv_diag = NULL;
+        }
     }
 
     // Reset CSR structure
@@ -386,6 +169,7 @@ void csr_free(CSR *A)
     A->n_local = 0;
     A->nnz = 0;
     A->row_start = 0;
+    A->inv_diag = NULL;
 }
 
 void export_csr_to_mtx(const char *filename, CSR *A, int n, int rank)
@@ -428,4 +212,106 @@ void export_csr_to_mtx(const char *filename, CSR *A, int n, int rank)
 
     fprintf(stdout, "[rank %d]Matrix exported to %s in Matrix Market format.\n", rank, filename);
     fflush(stdout);
+}
+
+void csr_sparse_matvec_mult_internal(CSR *A, Grid3D *G, double *x, double *y)
+{
+    /**
+     * Performs sparse matrix-vector multiplication y = A * x
+     * Handles only the internal rows that do not require halo regions.
+     *
+     * Parameters:
+     * - A: Local CSR matrix
+     * - G: Local grid information
+     * - x: Local input vector
+     * - y: Output vector
+     * Returns: void
+     **/
+
+    int plane_size = G->nx * G->ny;
+    // Skip the first plane and the last plane
+    for (int i = plane_size; i < A->n_local - plane_size; i++)
+    {
+        double sum = 0.0;
+        for (int j = A->row_ptr[i]; j < A->row_ptr[i + 1]; j++)
+        {
+            sum += A->values[j] * x[A->col_indices[j] - A->row_start];
+        }
+        y[i] = sum;
+    }
+}
+
+static void compute_row(CSR *A, int i, int plane_size, double *x, double *halo_up, double *halo_down, double *y)
+{
+    /**
+     * Helper function to compute a single row of the SpMV considering halo regions.
+     * Parameters:
+     * - A: Local CSR matrix
+     * - i: Row index to compute
+     * - plane_size: Size of one xy-plane
+     * - x: Local input vector
+     * - halo_up: Halo buffer from upper neighbor
+     * - halo_down: Halo buffer from lower neighbor
+     * - y: Output vector
+     * Returns: void
+     **/
+    int n_local = A->n_local;
+    int global_row_start = A->row_start;
+    int global_row_end = global_row_start + n_local;
+
+    double sum = 0.0;
+    for (int j = A->row_ptr[i]; j < A->row_ptr[i + 1]; j++)
+    {
+        int col = A->col_indices[j];
+        double val = A->values[j];
+        if (col >= global_row_start && col < global_row_end)
+            // Case 1: The data is local to this process
+            sum += val * x[col - global_row_start];
+        else if (col < global_row_start)
+            // Case 2: Data comes from the lower neighbor (halo_down)
+            // col is in range [global_row_start - plane_size, global_row_start - 1]
+            sum += val * halo_down[col - (global_row_start - plane_size)];
+        else
+            // Case 3: Data comes from the upper neighbor (halo_up)
+            // col is in range [global_row_end, global_row_end + plane_size - 1]
+            sum += val * halo_up[col - global_row_end];
+    }
+    y[i] = sum;
+}
+
+void csr_sparse_matvec_mult_boundary(CSR *A, Grid3D *G, double *x, double *halo_up, double *halo_down, double *y)
+{
+    /**
+     * Performs sparse matrix-vector multiplication y = A * x
+     * Handles only the boundary rows that require halo regions.
+     *
+     * Parameters:
+     * - A: Local CSR matrix
+     * - G: Local grid information
+     * - x: Local input vector
+     * - halo_up: Halo buffer from upper neighbor
+     * - halo_down: Halo buffer from lower neighbor
+     * - y: Output vector
+     * Returns: void
+     **/
+
+    int n_local = A->n_local;
+    int plane_size = G->nx * G->ny;
+
+    // Process bottom boundary
+    int end_bottom = (plane_size < n_local) ? plane_size : n_local;
+    for (int i = 0; i < end_bottom; i++)
+    {
+        compute_row(A, i, plane_size, x, halo_up, halo_down, y); // helper or inline logic
+    }
+
+    // Process top boundary
+    int start_top = n_local - plane_size;
+    if (start_top < end_bottom)
+        start_top = end_bottom; // Avoid overlap
+
+    for (int i = start_top; i < n_local; i++)
+    {
+        compute_row(A, i, plane_size, x, halo_up, halo_down, y);
+    }
 }

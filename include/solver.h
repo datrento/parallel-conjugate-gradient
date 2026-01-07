@@ -1,10 +1,53 @@
 #pragma once
 #include <mpi.h>
 #include "csr.h"
-void jacobi_preconditioned_conjugate_gradient(
-    const CSR *A_local,
-    double *diag_A_local, double *b_local, double *x0,
-    double *x_local, double *r_local, double *p, double *p_local,
-    double *z_local, double *Ap_local, int n_local, int n,
-    int *recvcounts, int *displs,
-    int max_iter, double tol, int rank, MPI_Comm comm);
+
+/**
+ * Structure to hold performance metrics for the CG solvers.
+ * Members:
+ *    total_time: total solver-call time (Walltime from barrier to barrier)
+ *   iter_time: iteration loop time only
+ *   iters: iterations performed
+ */
+typedef struct
+{
+    double total_time; // total solver-call time (barrier-to-barrier)
+    double iter_time;  // iteration loop time only
+    int iters;         // iterations performed
+} cg_metrics_t;
+
+/**
+ * Solves the linear system Ax = b using the Jacobi-preconditioned Conjugate Gradient method.
+ * Parameters:
+ *      A: global CSR matrix
+ *      G: grid information for domain decomposition
+ *      b: global right-hand side vector
+ *      x: global solution vector (initial guess on input, solution on output)
+ *      max_iter: maximum number of iterations
+ *      tol: convergence tolerance
+ *      metrics: pointer to cg_metrics_t structure to store performance metrics
+ * Returns: void
+ **/
+void jacobi_preconditioned_cg(
+    CSR *A, Grid3D *G,
+    double *b, double *x,
+    int max_iter, double tol,
+    cg_metrics_t *metrics);
+
+/**
+ * Solves the linear system Ax = b using the Jacobi-preconditioned Pipelined Conjugate Gradient method.
+ * Parameters:
+ *      A: global CSR matrix
+ *      G: grid information for domain decomposition
+ *      b: global right-hand side vector
+ *      x: global solution vector (initial guess on input, solution on output)
+ *      max_iter: maximum number of iterations
+ *      tol: convergence tolerance
+ *      metrics: pointer to cg_metrics_t structure to store performance metrics
+ * Returns: void
+ **/
+void jacobi_preconditioned_pipelined_cg(
+    CSR *A, Grid3D *G,
+    double *b, double *x,
+    int max_iter, double tol,
+    cg_metrics_t *metrics);

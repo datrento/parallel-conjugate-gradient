@@ -1,4 +1,11 @@
 #pragma once
 #include "csr.h"
-// Rank 0 builds the full SPD matrix of size grid_size^3 x grid_size^3 in CSR format
-int csr_build_spd_full(CSR *A, int grid_size, int rank);
+/**
+ * Builds the local CSR matrix for the 3D Poisson problem using a 7-point stencil.
+ * Parameters:
+ *      A: pointer to CSR matrix to be filled
+ *      G: pointer to Grid3D structure with grid and decomposition info
+ *      rank: MPI rank for logging purposes
+ * Returns: void
+ */
+void build_local_matrix(CSR *A, Grid3D *G, int rank);
