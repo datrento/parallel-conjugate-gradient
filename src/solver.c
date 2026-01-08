@@ -317,6 +317,15 @@ void jacobi_preconditioned_pipelined_cg(
     if (r0_norm < 1e-18)
         goto cleanup;
 
+    // --- (Initial Norm for Plotting) ---
+    double local_r0_l2 = 0;
+    for (int i = 0; i < n_local; i++)
+        local_r0_l2 += r[i] * r[i];
+    double global_r0_l2;
+    MPI_Allreduce(&local_r0_l2, &global_r0_l2, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    double r0_l2_norm = sqrt(global_r0_l2);
+    // ----------------------------------------------------
+
     // time the core iteration loop
     double t0 = MPI_Wtime();
     int itr;
@@ -349,7 +358,14 @@ void jacobi_preconditioned_pipelined_cg(
         }
 
 #ifdef DEBUG
-        log_convergence(rank, itr, sqrt(gamma), r0_norm, "pipelined");
+        // To make the plot match Baseline, we need the L2 norm, not gamma
+        double local_ri_l2 = 0;
+        for (int i = 0; i < n_local; i++)
+            local_ri_l2 += r[i] * r[i];
+        double global_ri_l2;
+        // This reduction is ONLY for the convergence plot data
+        MPI_Allreduce(&local_ri_l2, &global_ri_l2, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        log_convergence(rank, itr, sqrt(global_ri_l2), r0_l2_norm, "pipelined");
 #endif
 
         // gamma := (r_i, u_i), delta := (w_i, u_i)
