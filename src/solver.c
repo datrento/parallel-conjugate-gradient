@@ -131,7 +131,7 @@ void jacobi_preconditioned_cg(
         if (fabs(pAp) < 1e-20)
         {
             if (rank == 0)
-                fprintf(stderr, "[rank %d] Breakdown: pAp ~ 0 at iter %d\n", rank, k);
+                fprintf(stderr, "[rank %d] Breakdown: pAp ~ 0 at iter %d\n", rank, k + 1);
             break;
         }
 
@@ -160,14 +160,14 @@ void jacobi_preconditioned_cg(
         if (rsnnew < (tol * tol) * rsn0)
         {
             if (rank == 0)
-                fprintf(stdout, "[rank %d] Converged in %d iterations.\n", rank, k + 1);
+                fprintf(stdout, "[rank %d] Converged at iteration %d with residual %e.\n", rank, k + 1, sqrt(rsnnew));
             break;
         }
 
         if (fabs(rtzold) < 1e-20)
         {
             if (rank == 0)
-                fprintf(stderr, "[rank %d] Breakdown: rtzold ~ 0 at iter %d\n", rank, k);
+                fprintf(stderr, "[rank %d] Breakdown: rtzold ~ 0 at iter %d\n", rank, k + 1);
             break;
         }
 
@@ -353,7 +353,7 @@ void jacobi_preconditioned_pipelined_cg(
         {
             if (rank == 0)
             {
-                printf("[rank %d]Converged at iteration %d with residual %e\n", rank, itr, sqrt(gamma));
+                printf("[rank %d]Converged at iteration %d with residual %e\n", rank, itr + 1, sqrt(gamma));
             }
             break;
         }

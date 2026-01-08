@@ -110,8 +110,8 @@ my_jobs:
 
 # disable this in the cluster environment
 local_run: compile
-	mpirun -n 4 $(TARGET_PIPE) 100 > $(LOGS_DIR)/local_run_out_pipe.log 2> $(LOGS_DIR)/local_run_err_pipe.log
-	mpirun -n 4 $(TARGET_BASE) 100 >> $(LOGS_DIR)/local_run_out_base.log 2>> $(LOGS_DIR)/local_run_err_base.log
+	mpirun -n 8 $(TARGET_PIPE) 200 > $(LOGS_DIR)/local_run_out_pipe.log 2> $(LOGS_DIR)/local_run_err_pipe.log
+	mpirun -n 8 $(TARGET_BASE) 200 >> $(LOGS_DIR)/local_run_out_base.log 2>> $(LOGS_DIR)/local_run_err_base.log
 	@echo "Local run completed. Output in $(LOGS_DIR)/local_run_out.log, errors in $(LOGS_DIR)/local_run_err.log"
 
 clean:
