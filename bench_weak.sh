@@ -1,26 +1,36 @@
 #!/bin/bash
-#PBS -N CG_Weak_Scaling
-#PBS -l select=8:ncpus=96:mpiprocs=96:mem=400gb
+#PBS -N CG_Weak_Scaling_27pt
+#PBS -l select=4:ncpus=96:mpiprocs=96:mem=600gb
 #PBS -l place=scatter:excl
+#PBS -l walltime=02:00:00
 #PBS -q short_HPC4DS
 #PBS -j oe
 
 cd $PBS_O_WORKDIR
 module load mpich-3.2
 
-# Load per rank: ~1.5 Million unknowns
-# 1 Node (96 ranks): Grid 524  (~144M total)
-# 2 Nodes (192 ranks): Grid 660 (~288M total)
-# 4 Nodes (384 ranks): Grid 832 (~576M total)
-# 8 Nodes (768 ranks): Grid 1048 (~1.1B total)
+# Pre-calculated Grid Sizes for 1.5M points per rank:
+# 96 ranks:  N=524
+# 192 ranks: N=660
+# 384 ranks: N=832
 
-declare -A GRIDS=( [96]=524 [192]=660 [384]=832 [768]=1048 )
+declare -A WEAK_GRIDS=( [96]=524 [192]=660 [384]=832 )
+NODE_COUNTS=(1 2 4)
 
-for NODES in 1 2 4 8; do
+echo "--- Experiment: Weak Scaling (1.5M points/rank) ---"
+
+for NODES in "${NODE_COUNTS[@]}"; do
     RANKS=$((NODES * 96))
-    G=${GRIDS[$RANKS]}
-    
-    echo "--- Testing Weak Scaling: $NODES nodes, Grid $G ---"
-    mpirun.actual -n $RANKS --bind-to core ./build/solver_baseline $G 1000 1e-10
-    mpirun.actual -n $RANKS --bind-to core ./build/solver_pipelined $G 1000 1e-10
+    G=${WEAK_GRIDS[$RANKS]}
+    echo "Testing $NODES Nodes ($RANKS Ranks) with Grid $G..."
+
+    # Run Baseline 3 times
+    for i in {1..3}; do
+        mpirun.actual -n $RANKS --bind-to core ./build/solver_baseline $G 1000 1e-10
+    done
+
+    # Run Pipelined 3 times
+    for i in {1..3}; do
+        mpirun.actual -n $RANKS --bind-to core ./build/solver_pipelined $G 1000 1e-10
+    done
 done

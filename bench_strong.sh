@@ -1,22 +1,34 @@
 #!/bin/bash
-#PBS -N CG_Strong_Scaling
-#PBS -l select=8:ncpus=96:mpiprocs=96:mem=200gb
+#PBS -N CG_Strong_Scaling_27pt
+#PBS -l select=4:ncpus=96:mpiprocs=96:mem=300gb
 #PBS -l place=scatter:excl
+#PBS -l walltime=02:00:00
 #PBS -q short_HPC4DS
 #PBS -j oe
 
 cd $PBS_O_WORKDIR
 module load mpich-3.2
 
-# Fixed Grid: 220^3 is ~10.6M unknowns. 
-# This is small enough to hit the "wall" at 8 nodes (768 cores).
-GRID=220
+# Fixed Problem Size (134M unknowns)
+GRID=512
+# Iterating through node counts: 1, 2, 4 nodes
+NODE_COUNTS=(1 2 4)
 
-echo "Node_Count,Ranks,Method,Total_Time,Iter_Time,Iters"
-for NODES in 1 2 4 8; do
+echo "--- Experiment: Strong Scaling (Grid=$GRID) ---"
+
+for NODES in "${NODE_COUNTS[@]}"; do
     RANKS=$((NODES * 96))
-    # Run Baseline
-    mpirun.actual -n $RANKS --bind-to core ./build/solver_baseline $GRID 1000 1e-10
-    # Run Pipelined
-    mpirun.actual -n $RANKS --bind-to core ./build/solver_pipelined $GRID 1000 1e-10
+    echo "Testing $NODES Nodes ($RANKS Ranks)..."
+
+    # Run Baseline 3 times
+    for i in {1..3}; do
+        echo "Baseline Rep $i..."
+        mpirun.actual -n $RANKS --bind-to core ./build/solver_baseline $GRID 1000 1e-10
+    done
+
+    # Run Pipelined 3 times
+    for i in {1..3}; do
+        echo "Pipelined Rep $i..."
+        mpirun.actual -n $RANKS --bind-to core ./build/solver_pipelined $GRID 1000 1e-10
+    done
 done

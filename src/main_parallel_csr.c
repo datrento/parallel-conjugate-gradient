@@ -14,7 +14,7 @@
 __attribute__((unused)) static void mpi_gather_csr_to_root(CSR *A_local, CSR *A_global, MPI_Comm comm);
 
 __attribute__((unused)) static void log_solver_performance_metrics(int rank, int size, int grid_size, double max_total_time, double min_total_time,
-                                                                   double max_iter_time, double min_iter_time, int iters_done, double avg_iter_time);
+                                                                   double max_iter_time, double min_iter_time, int iters_done, double avg_iter_time, const char *alg_name);
 
 int main(int argc, char *argv[])
 {
@@ -143,10 +143,12 @@ int main(int argc, char *argv[])
 
     // Timing metrics container returned from solver
     cg_metrics_t metrics = {0};
+    const char *alg_label;
 // This is controlled by the Makefile (-DBASE_LINE_ONLY=1 or 0)
 #if (BASE_LINE_ONLY == 1)
     if (rank == 0)
     {
+        alg_label = "baseline";
         printf("-------------------------------------------------------\n");
         printf("[rank %d][SOLVER] Mode: BASELINE Jacobi-Preconditioned CG\n", rank);
         printf("[rank %d][COMM]   Method: Global Allgatherv\n", rank);
@@ -158,6 +160,7 @@ int main(int argc, char *argv[])
 #else
     if (rank == 0)
     {
+        alg_label = "pipelined";
         printf("-------------------------------------------------------\n");
         printf("[rank %d][SOLVER] Mode: PIPELINED Jacobi-CG\n", rank);
         printf("[rank %d] Number of processes: %d\n", rank, size);
@@ -219,7 +222,7 @@ int main(int argc, char *argv[])
 
         log_solver_performance_metrics(rank, size, grid_size,
                                        max_total_time, min_total_time,
-                                       max_iter_time, min_iter_time, iters_done, avg_iter_time);
+                                       max_iter_time, min_iter_time, iters_done, avg_iter_time, alg_label);
     }
     // Verification the solutions
     verify_solution(Ax_local, b_local, n_local, rank, comm);
@@ -358,7 +361,7 @@ __attribute__((unused)) static void mpi_gather_csr_to_root(CSR *A_local, CSR *A_
 __attribute__((unused)) static void log_solver_performance_metrics(
     int rank, int size, int grid_size,
     double max_total_time, double min_total_time,
-    double max_iter_time, double min_iter_time, int iters_done, double avg_iter_time)
+    double max_iter_time, double min_iter_time, int iters_done, double avg_iter_time, const char *alg_name)
 {
     /**
      * Log the running time metrics to stdout and to a file for performance analysis.
@@ -375,43 +378,42 @@ __attribute__((unused)) static void log_solver_performance_metrics(
      *     iters_done: Number of iterations performed
      * Returns: None
      */
-    printf("[rank %d]Algorithm (total solver call) time: max %.6f => min %.6f s\n", rank, max_total_time, min_total_time);
-    printf("[rank %d]Algorithm (only loop) time: max %.6f => min %.6f s\n", rank, max_iter_time, min_iter_time);
-    printf("[rank %d]Iterations performed: %d\n", rank, iters_done);
-    printf("[rank %d]Average time per iteration (max): %.6f s\n", rank, avg_iter_time);
+
+    printf("\n[rank %d] --- Performance Summary (%s) ---\n", rank, alg_name);
+    printf("[rank %d] Grid: %dx%dx%d, Processes: %d\n", rank, grid_size, grid_size, grid_size, size);
+    printf("[rank %d] Solver Total Time (Max): %.6f s\n", rank, max_total_time);
+    printf("[rank %d] Solver Loop Time (Max):  %.6f s\n", rank, max_iter_time);
+    printf("[rank %d] Iterations: %d, Time/Iter: %.6f s\n", rank, iters_done, avg_iter_time);
     fflush(stdout);
 
-    // store the max_time for performance analysis later
     const char *time_filename = "output/jcgtimes.txt";
 
     // Check if file exists to decide whether to write header
-    int file_exists = 0;
     FILE *check_file = fopen(time_filename, "r");
+    int write_header = (check_file == NULL);
     if (check_file)
-    {
-        file_exists = 1;
         fclose(check_file);
-    }
 
     FILE *time_file = fopen(time_filename, "a");
     if (time_file)
     {
-        // Write header if file is new
-        if (!file_exists)
+        if (write_header)
         {
-            fprintf(time_file, "#grid_size num_processes total_time_max total_time_min iter_time_max iter_time_min total_iters avg_iter_time\n");
+            fprintf(time_file, "algorithm,grid_size,num_processes,total_time_max,total_time_min,iter_time_max,iter_time_min,total_iters,avg_iter_time\n");
         }
 
-        // Append grid_size, number of processes, max and min time
-        fprintf(time_file, "%d %d %.6f %.6f %.6f %.6f %d %.6f\n", grid_size, size, max_total_time, min_total_time, max_iter_time, min_iter_time, iters_done, avg_iter_time);
+        // Use comma-separated values for easy plotting
+        fprintf(time_file, "%s,%d,%d,%.6f,%.6f,%.6f,%.6f,%d,%.6f\n",
+                alg_name, grid_size, size,
+                max_total_time, min_total_time,
+                max_iter_time, min_iter_time,
+                iters_done, avg_iter_time);
+
         fclose(time_file);
-        fprintf(stdout, "[rank %d]Appended time data to %s:  grid_size=%d, num_processes=%d, total_time_max=%.6f, total_time_min=%.6f, iter_time_max=%.6f, iter_time_min=%.6f, iters_done=%d\n",
-                rank, time_filename, grid_size, size, max_total_time, min_total_time, max_iter_time, min_iter_time, iters_done);
-        fflush(stdout);
+        printf("[rank %d] Results appended to %s\n", rank, time_filename);
     }
     else
     {
-        fprintf(stderr, "[rank %d] Error opening %s for writing\n", rank, time_filename);
-        fflush(stderr);
+        fprintf(stderr, "[rank %d] Error opening %s\n", rank, time_filename);
     }
 }
