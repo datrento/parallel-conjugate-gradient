@@ -89,7 +89,8 @@ int main(int argc, char *argv[])
     }
 
     // Build local CSR matrix in each process based on its z-slab partition of the global grid
-    build_local_matrix(&A_local, &G, rank);
+    // build_local_matrix(&A_local, &G, rank);
+    build_local_matrix_27stencil(&A_local, &G, rank);
 
 #ifdef DEBUG
     // flag to export csr matrix from rank 0 for verification of SPD properties

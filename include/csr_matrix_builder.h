@@ -9,3 +9,4 @@
  * Returns: void
  */
 void build_local_matrix(CSR *A, Grid3D *G, int rank);
+void build_local_matrix_27stencil(CSR *A, Grid3D *G, int rank);

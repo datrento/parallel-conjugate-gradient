@@ -125,3 +125,120 @@ void build_local_matrix(CSR *A, Grid3D *G, int rank)
         fflush(stdout);
     }
 }
+
+void build_local_matrix_27stencil(CSR *A, Grid3D *G, int rank)
+{
+    int nx = G->nx, ny = G->ny;
+    int n_local = nx * ny * G->local_nz;
+    A->n = nx * ny * G->nz;
+    A->n_local = (int)n_local;
+    A->row_start = G->z_start * nx * ny;
+
+    A->row_ptr = (int *)malloc((n_local + 1) * sizeof(int));
+    A->inv_diag = (double *)malloc((n_local > 0 ? n_local : 1) * sizeof(double));
+
+    if (!A->row_ptr || !A->inv_diag)
+    {
+        fprintf(stderr, "[rank %d] Error allocating CSR row_ptr or inv_diag\n", rank);
+        MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
+    }
+
+    // 1. PRE-COUNT PHASE (27-point logic)
+    long long nnz_count = 0;
+    for (int lz = 0; lz < G->local_nz; lz++)
+    {
+        int gz = lz + G->z_start;
+        for (int iy = 0; iy < ny; iy++)
+        {
+            for (int ix = 0; ix < nx; ix++)
+            {
+                int count = 0;
+                // Check all 27 neighbors in a 3x3x3 cube around the point
+                for (int sz = -1; sz <= 1; sz++)
+                {
+                    for (int sy = -1; sy <= 1; sy++)
+                    {
+                        for (int sx = -1; sx <= 1; sx++)
+                        {
+                            int nz_g = gz + sz, ny_g = iy + sy, nx_g = ix + sx;
+                            if (nz_g >= 0 && nz_g < G->nz && ny_g >= 0 && ny_g < ny && nx_g >= 0 && nx_g < nx)
+                            {
+                                count++;
+                            }
+                        }
+                    }
+                }
+                nnz_count += count;
+            }
+        }
+    }
+
+    A->nnz = (int)nnz_count;
+    A->col_indices = (int *)malloc(nnz_count * sizeof(int));
+    A->values = (double *)malloc(nnz_count * sizeof(double));
+
+    if (!A->col_indices || !A->values)
+    {
+        fprintf(stderr, "[rank %d] Error allocating CSR col_indices or values\n", rank);
+        MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
+    }
+
+    // 2. FILL PHASE
+    int current_pos = 0;
+    int plane_size = nx * ny;
+    for (int lz = 0; lz < G->local_nz; lz++)
+    {
+        int gz = lz + G->z_start;
+        for (int iy = 0; iy < ny; iy++)
+        {
+            for (int ix = 0; ix < nx; ix++)
+            {
+                int row_idx = lz * plane_size + iy * nx + ix;
+                A->row_ptr[row_idx] = current_pos;
+                int global_row = row_idx + A->row_start;
+                int neighbors_count = 0;
+                int diag_idx = -1;
+
+                // Nested loops for 27-point stencil
+                for (int sz = -1; sz <= 1; sz++)
+                {
+                    for (int sy = -1; sy <= 1; sy++)
+                    {
+                        for (int sx = -1; sx <= 1; sx++)
+                        {
+                            int nz_g = gz + sz, ny_g = iy + sy, nx_g = ix + sx;
+
+                            if (nz_g >= 0 && nz_g < G->nz && ny_g >= 0 && ny_g < ny && nx_g >= 0 && nx_g < nx)
+                            {
+                                // int g_col = nz_g * plane_size + ny_g * nx + nx_g;
+                                int g_col = (int)((long long)nz_g * plane_size + (long long)ny_g * nx + nx_g);
+                                A->col_indices[current_pos] = g_col;
+
+                                if (g_col == global_row)
+                                {
+                                    diag_idx = current_pos;
+                                }
+                                else
+                                {
+                                    A->values[current_pos] = -1.0;
+                                    neighbors_count++;
+                                }
+                                current_pos++;
+                            }
+                        }
+                    }
+                }
+                // Diagonal Dominance: sum of off-diagonals + 0.1
+                double d_val = (double)neighbors_count + 0.1;
+                A->values[diag_idx] = d_val;
+                A->inv_diag[row_idx] = 1.0 / d_val;
+            }
+        }
+    }
+    A->row_ptr[n_local] = current_pos;
+
+    if (rank == 0)
+    {
+        printf("[rank %d] Local CSR (27-point) built: n_local=%d, nnz=%d\n", rank, A->n_local, A->nnz);
+    }
+}
