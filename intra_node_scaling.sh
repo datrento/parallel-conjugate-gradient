@@ -22,12 +22,12 @@ for CORES in "${CORE_COUNTS[@]}"; do
     # 1. Run Baseline 3 times
     for i in {1..3}; do
         echo "Baseline Rep $i..."
-        mpirun.actual -n $CORES --bind-to core --map-by socket ./build/solver_baseline $GRID 1000 1e-10
+        mpirun.actual -n $CORES --bind-to core --map-by socket ./build/solver_baseline $GRID 1000 1e-10 > logs/baseline_${CORES}cores_rep${i}.log 2>&1
     done
 
     # 2. Run Pipelined 3 times
     for i in {1..3}; do
         echo "Pipelined Rep $i..."
-        mpirun.actual -n $CORES --bind-to core --map-by socket ./build/solver_pipelined $GRID 1000 1e-10
+        mpirun.actual -n $CORES --bind-to core --map-by socket ./build/solver_pipelined $GRID 1000 1e-10 > logs/pipelined_${CORES}cores_rep${i}.log 2>&1
     done
 done
