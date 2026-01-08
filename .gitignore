@@ -13,6 +13,7 @@ logs/
 data/
 papers/
 output/
+plots/
 
 # Object files
 *.o
