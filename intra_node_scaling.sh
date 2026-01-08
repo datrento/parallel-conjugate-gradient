@@ -3,7 +3,7 @@
 #PBS -l select=1:ncpus=96:mpiprocs=96:mem=400gb
 #PBS -l place=scatter:excl
 #PBS -l walltime=06:00:00
-#PBS -q short_cpuQ
+#PBS -q short_HPC4DS
 #PBS -j oe
 
 cd $PBS_O_WORKDIR
