@@ -39,13 +39,13 @@ for GRID in "${GRIDS[@]}"; do
         for i in {1..3}; do
             echo "Baseline Repetition $i..."
             # Using --bind-to core and --map-by socket for performance
-            mpirun.actual -n $RANKS --bind-to core --map-by socket ./build/solver_baseline $GRID $MAX_ITER $TOL
+            mpirun.actual -n $RANKS --bind-to core --map-by socket ./build/solver_baseline $GRID $MAX_ITER $TOL > logs/baseline_${GRID}grid_${RANKS}ranks_rep${i}.log 2>&1
         done
 
         # 2. PIPELINED CG - 3 Replications
         for i in {1..3}; do
             echo "Pipelined Repetition $i..."
-            mpirun.actual -n $RANKS --bind-to core --map-by socket ./build/solver_pipelined $GRID $MAX_ITER $TOL
+            mpirun.actual -n $RANKS --bind-to core --map-by socket ./build/solver_pipelined $GRID $MAX_ITER $TOL > logs/pipelined_${GRID}grid_${RANKS}ranks_rep${i}.log 2>&1
         done
         
         echo "----------------------------------------------------------"
