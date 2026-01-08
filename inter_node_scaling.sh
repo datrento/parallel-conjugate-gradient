@@ -8,6 +8,17 @@
 
 cd $PBS_O_WORKDIR
 
+# Create a UNIQUE workspace for Inter-node data
+WORK_DIR="workspace_inter_node"
+mkdir -p $WORK_DIR/output
+mkdir -p $WORK_DIR/logs
+
+# Copy the binaries into this workspace
+cp build/solver_baseline $WORK_DIR/
+cp build/solver_pipelined $WORK_DIR/
+
+cd $WORK_DIR
+
 # Load the environment
 module load mpich-3.2
 
