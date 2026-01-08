@@ -317,14 +317,15 @@ void jacobi_preconditioned_pipelined_cg(
     if (r0_norm < 1e-18)
         goto cleanup;
 
-    // --- (Initial Norm for Plotting) ---
+#ifdef DEBUG
+    // --- (Initial Norm for Plotting Purpose) ---
     double local_r0_l2 = 0;
     for (int i = 0; i < n_local; i++)
         local_r0_l2 += r[i] * r[i];
     double global_r0_l2;
     MPI_Allreduce(&local_r0_l2, &global_r0_l2, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
     double r0_l2_norm = sqrt(global_r0_l2);
-    // ----------------------------------------------------
+#endif
 
     // time the core iteration loop
     double t0 = MPI_Wtime();
