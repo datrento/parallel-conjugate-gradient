@@ -1,6 +1,6 @@
 #!/bin/bash
 #PBS -N CG_IntraNode_ScaleUp
-#PBS -l select=1:ncpus=96:mpiprocs=96:mem=400gb
+#PBS -l select=1:ncpus=96:mpiprocs=96:mem=128gb
 #PBS -l place=scatter:excl
 #PBS -l walltime=06:00:00
 #PBS -q short_HPC4DS
@@ -9,7 +9,7 @@
 cd $PBS_O_WORKDIR
 module load mpich-3.2
 
-GRID=875
+GRID=400 # Fixed grid size for intra-node scaling
 CORE_COUNTS=(1 2 4 8 16 32 48 64 80 96)
 
 echo "--- Experiment: Intra-Node Scale-Up (Baseline vs Pipelined) ---"
