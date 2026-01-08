@@ -2,7 +2,7 @@
 #PBS -N CG_InterNode_StrongScaling
 #PBS -l select=4:ncpus=96:mpiprocs=96:mem=800gb
 #PBS -l place=scatter:excl
-#PBS -l walltime=10:00:00
+#PBS -l walltime=06:00:00
 #PBS -q short_HPC4DS
 #PBS -j oe
 
