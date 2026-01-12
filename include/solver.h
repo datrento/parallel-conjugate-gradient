@@ -14,6 +14,7 @@ typedef struct
     double total_time; // total solver-call time (barrier-to-barrier)
     double iter_time;  // iteration loop time only
     int iters;         // iterations performed
+    double comm_time;  // total communication time within iterations
 } cg_metrics_t;
 
 /**

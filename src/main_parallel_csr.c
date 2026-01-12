@@ -14,7 +14,8 @@
 __attribute__((unused)) static void mpi_gather_csr_to_root(CSR *A_local, CSR *A_global, MPI_Comm comm);
 
 __attribute__((unused)) static void log_solver_performance_metrics(int rank, int size, int grid_size, double max_total_time, double min_total_time,
-                                                                   double max_iter_time, double min_iter_time, int iters_done, double avg_iter_time, const char *alg_name);
+                                                                   double max_iter_time, double min_iter_time, int iters_done, double avg_iter_time, const char *alg_name,
+                                                                   double max_comm_time, double min_comm_time, double average_comm_time, double avg_comm_iter_time);
 
 int main(int argc, char *argv[])
 {
@@ -173,6 +174,7 @@ int main(int argc, char *argv[])
 
     double iter_time_local = metrics.iter_time;
     double total_time_local = metrics.total_time;
+    double total_comm_time_local = metrics.comm_time;
     int iters_done = metrics.iters;
 
     int plane_size = G.nx * G.ny;
@@ -198,31 +200,39 @@ int main(int argc, char *argv[])
     MPI_Waitall(4, h_req, MPI_STATUSES_IGNORE);
     csr_sparse_matvec_mult_boundary(&A_local, &G, x_local, r_up, r_down, Ax_local);
 
-    MPI_Request gather_req[2];
+    MPI_Request gather_req[3];
     // the minimum and maximum time taken among all processes (iteration-only and total)
-    double local_times[2] = {total_time_local, iter_time_local};
-    double min_times[2];
-    double max_times[2];
+    double local_times[3] = {total_time_local, iter_time_local, total_comm_time_local};
+    double min_times[3];
+    double max_times[3];
+    MPI_Ireduce(local_times, min_times, 3, MPI_DOUBLE, MPI_MIN, 0, comm, &gather_req[0]);
+    MPI_Ireduce(local_times, max_times, 3, MPI_DOUBLE, MPI_MAX, 0, comm, &gather_req[1]);
 
-    MPI_Ireduce(local_times, min_times, 2, MPI_DOUBLE, MPI_MIN, 0, comm, &gather_req[0]);
-    MPI_Ireduce(local_times, max_times, 2, MPI_DOUBLE, MPI_MAX, 0, comm, &gather_req[1]);
-
+    // Optional: Get the average comm time to see if you have load imbalance
+    double sum_comm_times[3];
+    MPI_Ireduce(local_times, sum_comm_times, 3, MPI_DOUBLE, MPI_SUM, 0, comm, &gather_req[2]);
     // Wait for all non-blocking operations to complete
-    MPI_Waitall(2, gather_req, MPI_STATUSES_IGNORE);
-    double min_total_time = 0, min_iter_time = 0;
-    double max_total_time = 0, max_iter_time = 0;
-    double avg_iter_time = 0;
+    MPI_Waitall(3, gather_req, MPI_STATUSES_IGNORE);
+    double min_total_time = 0, min_iter_time = 0, min_comm_time = 0;
+    double max_total_time = 0, max_iter_time = 0, max_comm_time = 0;
+    double avg_iter_time = 0, avg_comm_iter_time = 0;
+    double average_comm_time = 0;
     if (rank == 0)
     {
         min_total_time = min_times[0];
         min_iter_time = min_times[1];
         max_total_time = max_times[0];
         max_iter_time = max_times[1];
+        max_comm_time = max_times[2];
+        min_comm_time = min_times[2];
+        avg_comm_iter_time = max_comm_time / iters_done;
         avg_iter_time = max_iter_time / iters_done;
+        average_comm_time = sum_comm_times[2] / size;
 
         log_solver_performance_metrics(rank, size, grid_size,
                                        max_total_time, min_total_time,
-                                       max_iter_time, min_iter_time, iters_done, avg_iter_time, alg_label);
+                                       max_iter_time, min_iter_time, iters_done, avg_iter_time, alg_label,
+                                       max_comm_time, min_comm_time, average_comm_time, avg_comm_iter_time);
     }
     // Verification the solutions
     verify_solution(Ax_local, b_local, n_local, rank, comm);
@@ -361,7 +371,8 @@ __attribute__((unused)) static void mpi_gather_csr_to_root(CSR *A_local, CSR *A_
 __attribute__((unused)) static void log_solver_performance_metrics(
     int rank, int size, int grid_size,
     double max_total_time, double min_total_time,
-    double max_iter_time, double min_iter_time, int iters_done, double avg_iter_time, const char *alg_name)
+    double max_iter_time, double min_iter_time, int iters_done, double avg_iter_time, const char *alg_name,
+    double max_comm_time, double min_comm_time, double average_comm_time, double avg_comm_iter_time)
 {
     /**
      * Log the running time metrics to stdout and to a file for performance analysis.
@@ -399,16 +410,16 @@ __attribute__((unused)) static void log_solver_performance_metrics(
     {
         if (write_header)
         {
-            fprintf(time_file, "algorithm,grid_size,num_processes,total_time_max,total_time_min,iter_time_max,iter_time_min,total_iters,avg_iter_time\n");
+            fprintf(time_file, "algorithm,grid_size,num_processes,total_time_max,total_time_min,iter_time_max,iter_time_min,total_iters,avg_iter_time,max_comm_time,min_comm_time,average_comm_time,avg_comm_iter_time\n");
         }
 
         // Use comma-separated values for easy plotting
-        fprintf(time_file, "%s,%d,%d,%.6f,%.6f,%.6f,%.6f,%d,%.6f\n",
+        fprintf(time_file, "%s,%d,%d,%.6f,%.6f,%.6f,%.6f,%d,%.6f,%.6f,%.6f,%.6f,%.6f\n",
                 alg_name, grid_size, size,
                 max_total_time, min_total_time,
                 max_iter_time, min_iter_time,
-                iters_done, avg_iter_time);
-
+                iters_done, avg_iter_time,
+                max_comm_time, min_comm_time, average_comm_time, avg_comm_iter_time);
         fclose(time_file);
         printf("[rank %d] Results appended to %s\n", rank, time_filename);
     }

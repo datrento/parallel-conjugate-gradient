@@ -115,10 +115,15 @@ void jacobi_preconditioned_cg(
     double t0 = MPI_Wtime();
     int k;
 
+    double t_comm = 0.0; // total communication time accumulator
+
     for (k = 0; k < max_iter; k++)
     {
+        // 1: block comm; time gather comm time
+        double tc0 = MPI_Wtime();
         // gather p
         MPI_Allgatherv(p_local, n_local, MPI_DOUBLE, p, recvcounts, displs, MPI_DOUBLE, MPI_COMM_WORLD);
+        t_comm += (MPI_Wtime() - tc0);
 
         csr_sparse_matvec_mult_local(A, p, Ap_local);
 
@@ -126,7 +131,10 @@ void jacobi_preconditioned_cg(
         for (int i = 0; i < n_local; i++)
             pAp += p_local[i] * Ap_local[i];
 
+        // 2: block comm; time reduction comm time
+        double tc1 = MPI_Wtime();
         MPI_Allreduce(MPI_IN_PLACE, &pAp, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        t_comm += (MPI_Wtime() - tc1);
 
         if (fabs(pAp) < 1e-20)
         {
@@ -152,11 +160,13 @@ void jacobi_preconditioned_cg(
             rtznew += r_local[i] * z_local[i];
         }
 
+        // 3: block comm; time reduction comm time
         double pair[2] = {rsnnew, rtznew};
+        double tc2 = MPI_Wtime();
         MPI_Allreduce(MPI_IN_PLACE, pair, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        t_comm += (MPI_Wtime() - tc2);
         rsnnew = pair[0];
         rtznew = pair[1];
-
         if (rsnnew < (tol * tol) * rsn0)
         {
             if (rank == 0)
@@ -190,6 +200,7 @@ void jacobi_preconditioned_cg(
         metrics->iters = k + 1;
         metrics->iter_time = (t1 - t0);
         metrics->total_time = (t1 - t_total0);
+        metrics->comm_time = t_comm;
     }
 
     goto cleanup;
@@ -330,6 +341,7 @@ void jacobi_preconditioned_pipelined_cg(
     // time the core iteration loop
     double t0 = MPI_Wtime();
     int itr;
+    double t_comm = 0.0;
 
     // Main iteration loop
     for (itr = 0; itr < max_iter; itr++)
@@ -393,11 +405,17 @@ void jacobi_preconditioned_pipelined_cg(
         // SpMV: v_i = A * m_i (internal + boundary)
         csr_sparse_matvec_mult_internal(A, G, m, v); // internal rows
 
+        // 1: block comm; time halo comm time
+        double tc0 = MPI_Wtime();
         MPI_Waitall(4, h_req, MPI_STATUSES_IGNORE);
+        t_comm += (MPI_Wtime() - tc0);
         csr_sparse_matvec_mult_boundary(A, G, m, r_up, r_down, v);
 
+        // 2: block comm; time reduction comm time
+        double tc1 = MPI_Wtime();
         // Ensure dots are finished
         MPI_Wait(&dot_req, MPI_STATUS_IGNORE);
+        t_comm += (MPI_Wtime() - tc1);
         gamma_old = gamma;
         gamma = global_dots[0];
         delta = global_dots[1];
@@ -414,6 +432,7 @@ void jacobi_preconditioned_pipelined_cg(
         metrics->iters = itr + 1; // iterations performed
         metrics->iter_time = (t1 - t0);
         metrics->total_time = (t1 - t_total0);
+        metrics->comm_time = t_comm;
     }
 
     goto cleanup;
