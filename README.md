@@ -1,18 +1,18 @@
 # Parallel Conjugate Gradient (MPI) — Jacobi-PCG & Pipelined Jacobi-PCG
 
-This project implements and evaluates **two distributed-memory variants of the Conjugate Gradient method** for solving large **symmetric positive definite (SPD)** linear systems of the form **Ax = b**, where **A** comes from a structured **3D stencil discretization** (Poisson-like operator). fileciteturn0file1
+This project implements and evaluates **two distributed-memory variants of the Conjugate Gradient method** for solving large **symmetric positive definite (SPD)** linear systems of the form **Ax = b**, where **A** comes from a structured **3D stencil discretization** (Poisson-like operator).  
 
 The two solver variants share the same mathematical core (Jacobi preconditioning + CG), but differ in how they handle **communication and synchronization** at scale:
 
-- **JCG (Jacobi-PCG / baseline)**: straightforward parallel PCG with **global replication of the search direction p** using `MPI_Allgatherv`, plus `MPI_Allreduce` for dot products. fileciteturn0file1  
-- **Pipelined JCG (PJCG / pipeline JCG)**: avoids global replication by using **z-slab halo exchange** (nearest-neighbor planes) and overlaps dot-product reductions using **non-blocking collectives** (e.g., `MPI_Iallreduce`). fileciteturn0file1
+- **JCG (Jacobi-PCG / baseline)**: straightforward parallel PCG with **global replication of the search direction p** using `MPI_Allgatherv`, plus `MPI_Allreduce` for dot products.    
+- **Pipelined JCG (PJCG / pipeline JCG)**: avoids global replication by using **z-slab halo exchange** (nearest-neighbor planes) and overlaps dot-product reductions using **non-blocking collectives** (e.g., `MPI_Iallreduce`). 
 
 ---
 
 ## Problem setup
 
 ### 3D grid and stencil operator
-We benchmark synthetically generated sparse SPD matrices built from a structured 3D grid of size **Nx × Ny × Nz**. The main benchmarking configuration uses a **27-point stencil** (coupling each grid point to its 3×3×3 neighborhood). fileciteturn0file1
+We benchmark synthetically generated sparse SPD matrices built from a structured 3D grid of size **Nx × Ny × Nz**. The main benchmarking configuration uses a **27-point stencil** (coupling each grid point to its 3×3×3 neighborhood).  
 
 > Note: the codebase can also support a **7-point stencil** (face neighbors) for simpler validation/experiments (same parallel partitioning idea).
 
@@ -20,15 +20,15 @@ We benchmark synthetically generated sparse SPD matrices built from a structured
 The distributed implementation uses a **1D domain decomposition along the z-axis** (**z-slab partitioning**). Each MPI rank owns a contiguous range of **xy-planes**:
 - local subdomain: `Nx × Ny × Nz_local`
 - local unknowns: `n_local = Nx · Ny · Nz_local`
-- global offset: `row_start = z_start · (Nx · Ny)` fileciteturn0file1
+- global offset: `row_start = z_start · (Nx · Ny)`  
 
-This is the key point to communicate in the README/report: each process owns **a block of planes**, not “rows of the dense matrix”. The z-slab decomposition makes the communication pattern structured and scalable. fileciteturn0file1
+This is the key point to communicate in the README/report: each process owns **a block of planes**, not “rows of the dense matrix”. The z-slab decomposition makes the communication pattern structured and scalable.  
 
 ---
 
 ## Data dependencies and communication (why you must communicate)
 
-Inside each CG iteration there is an unavoidable dependency chain (you cannot parallelize iterations), so parallelism comes from splitting the work **within** an iteration. fileciteturn0file1
+Inside each CG iteration there is an unavoidable dependency chain (you cannot parallelize iterations), so parallelism comes from splitting the work **within** an iteration.  
 
 ### Where communication is required
 1) **SpMV** (`s = A·p`) needs neighbor values near subdomain boundaries.  
@@ -39,18 +39,18 @@ Inside each CG iteration there is an unavoidable dependency chain (you cannot pa
 **Baseline JCG (global replication of p)**  
 - `MPI_Allgatherv(p_local → p_global)` each iteration  
 - local SpMV uses the gathered global vector  
-- `MPI_Allreduce` for scalar products fileciteturn0file1
+- `MPI_Allreduce` for scalar products  
 
 **Pipelined JCG (halo + overlap)**  
 - exchange only boundary **xy-plane halos** with `rank-1` and `rank+1` (nearest neighbors in z)  
 - split SpMV into:
   - *interior planes* (can be computed immediately)
   - *boundary planes* (computed after halos arrive)  
-- use **non-blocking reductions** (e.g., `MPI_Iallreduce`) to overlap reduction latency with local work fileciteturn0file1
+- use **non-blocking reductions** (e.g., `MPI_Iallreduce`) to overlap reduction latency with local work  
 
 Communication volume intuition:
 - baseline: **O(N³)** per-iteration traffic due to global replication
-- pipelined: **O(N²)** per-iteration traffic (one or two halo planes per neighbor) fileciteturn0file1
+- pipelined: **O(N²)** per-iteration traffic (one or two halo planes per neighbor)  
 
 ---
 
@@ -114,19 +114,19 @@ sequenceDiagram
 ## Implementation highlights
 
 ### CSR matrix construction (distributed setup)
-Each rank **constructs its local CSR block directly** from `(Nx, Ny, Nz)` and its own `(z_start, Nz_local)` instead of building a global CSR on rank 0 and scattering it. This avoids expensive setup communication and scales better. fileciteturn0file1
+Each rank **constructs its local CSR block directly** from `(Nx, Ny, Nz)` and its own `(z_start, Nz_local)` instead of building a global CSR on rank 0 and scattering it. This avoids expensive setup communication and scales better.  
 
 ### Correctness / validation trick
 To validate correctness, we pick a known constant solution (e.g., `x_known = 2.0`) and construct the right-hand side as:
 - `b_local = A_local · x_known`  
-so the exact solution is known a priori for checks. fileciteturn0file1
+so the exact solution is known a priori for checks.  
 
 ---
 
 ## Build
 
 > The project is intended to be built with an MPI compiler wrapper (e.g., `mpicc`).  
-> The Makefile in this repo builds **two executables** (baseline vs pipelined) from the same source tree via a compile-time switch/flag. fileciteturn0file1
+> The Makefile in this repo builds **two executables** (baseline vs pipelined) from the same source tree via a compile-time switch/flag.  
 
 Typical usage (adapt to your exact Makefile targets):
 ```bash
@@ -140,7 +140,7 @@ make pipelined
 
 ## Run
 
-> Parameters typically include grid size (Nx, Ny, Nz), maximum iterations, and tolerance. fileciteturn0file1
+> Parameters typically include grid size (Nx, Ny, Nz), maximum iterations, and tolerance.  
 
 Examples (replace executable name/args with your real CLI):
 ```bash
@@ -157,14 +157,14 @@ The code is organized into modules that separate:
 - **solvers**:
   - baseline JCG (Allgatherv + Allreduce)
   - pipelined JCG (halo exchange + Iallreduce overlap)
-- **utilities** (timing, logging, validation, halo helpers) fileciteturn0file1
+- **utilities** (timing, logging, validation, halo helpers)  
 
 ---
 
 ## OpenMP (planned / future work)
-A natural extension is **hybrid MPI+OpenMP**: keep z-slab distribution across nodes, and parallelize local kernels (SpMV + vector loops) with OpenMP within each node. This can reduce the number of MPI ranks participating in collectives and often improves scalability on multi-core nodes. The current project reports MPI-only measurements; OpenMP is left as future work. fileciteturn0file1
+A natural extension is **hybrid MPI+OpenMP**: keep z-slab distribution across nodes, and parallelize local kernels (SpMV + vector loops) with OpenMP within each node. This can reduce the number of MPI ranks participating in collectives and often improves scalability on multi-core nodes. The current project reports MPI-only measurements; OpenMP is left as future work.  
 
 ---
 
 ## Reference
-See the accompanying report for algorithm details, parallel design rationale, and performance results. fileciteturn0file1
+See the accompanying report for algorithm details, parallel design rationale, and performance results.  
