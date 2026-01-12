@@ -36,7 +36,7 @@ for i in $(seq 1 $REPS); do
     # Pipelined Full Run
     mpirun.actual -n 96 ./solver_pipelined 512 1000 $TOL > logs/pipe_512_96_rep${i}.log 2>&1
     # Baseline Probe (21 iterations to get average)
-    mpirun.actual -n 96 ./solver_baseline 512 21 $TOL > logs/base_512_96_rep${i}.log 2>&1
+    mpirun.actual -n 96 ./solver_baseline 512 1000 $TOL > logs/base_512_96_rep${i}.log 2>&1
 done
 
 # --- CASE 2: 2 NODES (192 RANKS), N=645 ---
