@@ -10,7 +10,7 @@
 cd $PBS_O_WORKDIR
 
 # Create a unique directory for this scaling study
-WORK_DIR="scaling_commtime_$PBS_JOBID"
+WORK_DIR="scaling_commtime_updated_$PBS_JOBID"
 mkdir -p $WORK_DIR/output
 mkdir -p $WORK_DIR/logs
 cp build/solver_baseline $WORK_DIR/
@@ -45,7 +45,7 @@ for i in $(seq 1 $REPS); do
     # Pipelined Full Run
     mpirun.actual -n 192 ./solver_pipelined 645 1000 $TOL > logs/pipe_645_192_rep${i}.log 2>&1
     # Baseline Probe
-    mpirun.actual -n 192 ./solver_baseline 645 21 $TOL > logs/base_645_192_rep${i}.log 2>&1
+    mpirun.actual -n 192 ./solver_baseline 645 20 $TOL > logs/base_645_192_rep${i}.log 2>&1
 done
 
 # --- CASE 3: 4 NODES (384 RANKS), N=813 ---
@@ -54,7 +54,7 @@ for i in $(seq 1 $REPS); do
     # Pipelined Full Run
     mpirun.actual -n 384 ./solver_pipelined 813 1000 $TOL > logs/pipe_813_384_rep${i}.log 2>&1
     # Baseline Probe
-    mpirun.actual -n 384 ./solver_baseline 813 21 $TOL > logs/base_813_384_rep${i}.log 2>&1
+    mpirun.actual -n 384 ./solver_baseline 813 20 $TOL > logs/base_813_384_rep${i}.log 2>&1
 done
 
 echo "-------------------------------------------------------"
