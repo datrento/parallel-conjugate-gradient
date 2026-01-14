@@ -79,14 +79,18 @@ flowchart TB
 ### 2) One iteration (baseline vs pipelined)
 ```mermaid
 sequenceDiagram
-  participant Rank as Each MPI rank
-  participant Allreduce as MPI_Allreduce / MPI_Iallreduce
+  participant Rank as "Each MPI rank"
+  participant Allgatherv as "MPI_Allgatherv"
+  participant Allreduce as "MPI_Allreduce"
 
-  Rank->>Rank: SpMV: s = A·p (needs boundary data)
+  Rank->>Allgatherv: Gather p (global replication)
+  Allgatherv-->>Rank: p_global
+  Rank->>Rank: SpMV: s = A·p_global
   Rank->>Rank: Local dot-products (partial sums)
   Rank->>Allreduce: Reduce scalars (alpha/beta terms)
   Allreduce-->>Rank: Global scalars
   Rank->>Rank: Vector updates (x, r, p)
+
 ```
 
 ### 3) Pipelined idea (overlap)
@@ -221,13 +225,6 @@ Sample results and plots from experiments can be found in the `plots/` directory
 This plot shows the communication vs computation time breakdown for different solver variants and scaling scenarios.
 
 These plots illustrate the performance characteristics and scaling behavior discussed in the report.
-
----
-
-## Reference
-See the accompanying report for algorithm details, parallel design rationale, and performance results.  
-
----
 
 ## References
 
