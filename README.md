@@ -1,11 +1,11 @@
-# Parallel Conjugate Gradient (MPI) — Jacobi-PCG & Pipelined Jacobi-PCG
+# Parallel Conjugate Gradient (MPI) — Jacobi-CG & Pipelined Jacobi-CG
 
 This project implements and evaluates **two distributed-memory variants of the Conjugate Gradient method** for solving large **symmetric positive definite (SPD)** linear systems of the form **Ax = b**, where **A** comes from a structured **3D stencil discretization** (Poisson-like operator).  
 
 The two solver variants share the same mathematical core (Jacobi preconditioning + CG), but differ in how they handle **communication and synchronization** at scale:
 
-- **JCG (Jacobi-PCG / baseline)**: straightforward parallel PCG with **global replication of the search direction p** using `MPI_Allgatherv`, plus `MPI_Allreduce` for dot products.    
-- **Pipelined JCG (PJCG / pipeline JCG)**: avoids global replication by using **z-slab halo exchange** (nearest-neighbor planes) and overlaps dot-product reductions using **non-blocking collectives** (e.g., `MPI_Iallreduce`). 
+- **JCG (Jacobi-CG / baseline)**: straightforward parallel PCG with **global replication of the search direction p** using `MPI_Allgatherv`, plus `MPI_Allreduce` for dot products.    
+- **Pipelined JCG (pipelined JCG)**: avoids global replication by using **z-slab halo exchange** (nearest-neighbor planes) and overlaps dot-product reductions using **non-blocking collectives** (e.g., `MPI_Iallreduce`). 
 
 ---
 
@@ -14,19 +14,17 @@ The two solver variants share the same mathematical core (Jacobi preconditioning
 ### 3D grid and stencil operator
 We benchmark synthetically generated sparse SPD matrices built from a structured 3D grid of size **Nx × Ny × Nz**. The main benchmarking configuration uses a **27-point stencil** (coupling each grid point to its 3×3×3 neighborhood).  
 
-> Note: the codebase can also support a **7-point stencil** (face neighbors) for simpler validation/experiments (same parallel partitioning idea).
-
 ### Z-slab MPI decomposition (what changed vs “row partitioning”)
 The distributed implementation uses a **1D domain decomposition along the z-axis** (**z-slab partitioning**). Each MPI rank owns a contiguous range of **xy-planes**:
 - local subdomain: `Nx × Ny × Nz_local`
 - local unknowns: `n_local = Nx · Ny · Nz_local`
 - global offset: `row_start = z_start · (Nx · Ny)`  
 
-This is the key point to communicate in the README/report: each process owns **a block of planes**, not “rows of the dense matrix”. The z-slab decomposition makes the communication pattern structured and scalable.  
+The z-slab decomposition makes the communication pattern structured and scalable as compared to plain row decomposition(didn't work).  
 
 ---
 
-## Data dependencies and communication (why you must communicate)
+## Data dependencies and communication
 
 Inside each CG iteration there is an unavoidable dependency chain (you cannot parallelize iterations), so parallelism comes from splitting the work **within** an iteration.  
 
@@ -54,7 +52,7 @@ Communication volume intuition:
 
 ---
 
-## Architecture diagrams (README-friendly)
+## Architecture diagrams
 
 ### 1) Z-slab partitioning + halo exchange
 ```mermaid
@@ -126,12 +124,13 @@ so the exact solution is known a priori for checks.
 ## Build
 
 > The project is intended to be built with an MPI compiler wrapper (e.g., `mpicc`).  
-> The Makefile in this repo builds **two executables** (baseline vs pipelined) from the same source tree via a compile-time switch/flag.  
+> The Makefile in this repo builds **two executables** (baseline vs pipelined) from the same source tree via a compile-time flag.  
 
-Typical usage (adapt to your exact Makefile targets):
+Typical usage:
 ```bash
+# both
 make
-# or
+# separately
 make baseline
 make pipelined
 ```
@@ -140,13 +139,49 @@ make pipelined
 
 ## Run
 
-> Parameters typically include grid size (Nx, Ny, Nz), maximum iterations, and tolerance.  
 
-Examples (replace executable name/args with your real CLI):
+Parameters typically include grid size (Nx, Ny, Nz), maximum iterations, and tolerance.
+
+### Local Run
+
+
+For local testing (e.g., on your workstation), use the following commands (executables are in the build/ directory):
 ```bash
-mpirun -np 96 ./jcg_baseline 512 512 512 1e-10 5000
-mpirun -np 96 ./jcg_pipelined 512 512 512 1e-10 5000
+# Baseline solver
+mpirun -np 96 ./build/solver_baseline 512 1e-10 1000
+# Pipelined solver
+mpirun -np 96 ./build/solver_pipelined 512 1e-10 1000
 ```
+Or simply run:
+```bash
+make local_run
+```
+
+Both solvers take the following arguments: <N> <tolerance> <max_iterations>
+Example:
+```bash
+mpirun -np 96 ./build/solver_baseline 512 1e-10 5000
+```
+
+### Cluster Run (HPC)
+
+On a cluster, submit jobs using the provided PBS scripts (see `pbs_scripts/` or examples below). Do **not** run MPI jobs directly from the login node.
+
+Example PBS script snippet:
+```bash
+#PBS -N CG_IntraNode_ScaleUp
+#PBS -l select=1:ncpus=96:mpiprocs=96:mem=128gb
+#PBS -l place=scatter:excl
+#PBS -l walltime=06:00:00
+#PBS -q short_HPC4DS
+#PBS -j oe
+
+cd $PBS_O_WORKDIR
+module load mpich-3.2
+
+mpirun.actual -n 96 --bind-to core --map-by socket ./build/solver_baseline 400 1000 1e-10
+```
+See the `pbs_scripts/` directory for more examples and batch submission templates.
 
 ---
 
@@ -164,7 +199,34 @@ The code is organized into modules that separate:
 ## OpenMP (planned / future work)
 A natural extension is **hybrid MPI+OpenMP**: keep z-slab distribution across nodes, and parallelize local kernels (SpMV + vector loops) with OpenMP within each node. This can reduce the number of MPI ranks participating in collectives and often improves scalability on multi-core nodes. The current project reports MPI-only measurements; OpenMP is left as future work.  
 
+
+## Example Results
+
+
+Sample results and plots from experiments can be found in the `plots/` directory. For example:
+
+### Communication vs Computation Breakdown
+
+<p align="center">
+  <img src="plots/comm_vs_comp_breakdown.pdf" alt="Communication vs Computation Breakdown" width="600"/>
+</p>
+
+This plot shows the communication vs computation time breakdown for different solver variants and scaling scenarios.
+
+These plots illustrate the performance characteristics and scaling behavior discussed in the report.
+
 ---
 
 ## Reference
 See the accompanying report for algorithm details, parallel design rationale, and performance results.  
+
+---
+
+## References
+
+- P. Ghysels and W. Vanroose. "Hiding global synchronization latency in the preconditioned conjugate gradient algorithm." SIAM Journal on Scientific Computing, 40(7):224–238.
+- Y. Saad. "Iterative Methods for Sparse Linear Systems." SIAM, 2003.
+- J. R. Shewchuk. "An Introduction to the Conjugate Gradient Method Without the Agonizing Pain." Technical report, 1994. [PDF](https://www.cs.cmu.edu/~quake-papers/painless-conjugate-gradient.pdf)
+- HPCG Benchmark: [GitHub](https://github.com/hpcg-benchmark/hpcg) | [Website](https://www.hpcg-benchmark.org/)
+
+---
