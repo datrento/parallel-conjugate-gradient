@@ -157,10 +157,17 @@ Or simply run:
 make local_run
 ```
 
-Both solvers take the following arguments: <N> <tolerance> <max_iterations>
+
+Both solvers take the following arguments (in order): \<N>\<tolerance><max_iterations>
+
+Where:
+  - <N>: Grid size (for a cubic grid, Nx = Ny = Nz = N)
+  - <tolerance>: Convergence tolerance (e.g., 1e-10)
+  - <max_iterations>: Maximum number of CG iterations
+
 Example:
 ```bash
-mpirun -np 96 ./build/solver_baseline 512 1e-10 5000
+mpirun -np 96 ./build/solver_baseline 512 1e-10 1000
 ```
 
 ### Cluster Run (HPC)
@@ -208,7 +215,7 @@ Sample results and plots from experiments can be found in the `plots/` directory
 ### Communication vs Computation Breakdown
 
 <p align="center">
-  <img src="plots/comm_vs_comp_breakdown.pdf" alt="Communication vs Computation Breakdown" width="600"/>
+  <img src="plots/comm_vs_comp_breakdown.png" alt="Communication vs Computation Breakdown" width="600"/>
 </p>
 
 This plot shows the communication vs computation time breakdown for different solver variants and scaling scenarios.
