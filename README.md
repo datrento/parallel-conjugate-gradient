@@ -124,6 +124,29 @@ To validate correctness, we pick a known constant solution (e.g., `x_known = 2.0
 so the exact solution is known a priori for checks.  
 
 ---
+## Performance Metrics
+
+All timings use the **minimum of the maximum per-rank wall-clock times** across three runs to reduce noise.
+
+- **Absolute Speedup ($`S_P^{abs}`$)**  
+  Improvement over the **Baseline JCG (96 ranks, 1 node)**:  
+
+  $S_P^{abs} = \frac{T_{96}^{baseline}}{T_P^{algo}}$
+
+- **Self-Scaling Speedup ($`S_P^{self}`$)**  
+  Scalability relative to the algorithm’s own **1-node** performance:  
+  $S_P^{self} = \frac{T_{96}^{algo}}{T_P^{algo}}$
+
+- **Parallel Efficiency ($`E_P`$)**  
+  Utilization efficiency across **N = P/96** nodes:  
+
+  $E_P = \frac{S_P^{self}}{N} \times 100\%$
+
+- **Weak Scaling Efficiency ($`W_P`$)**  
+  Stability of per-iteration time at fixed workload per rank (~1.4M unknowns/rank):  
+
+  $W_P = \frac{T_{iter,96}}{T_{iter,P}} \times 100\% $
+
 
 ## Build
 
