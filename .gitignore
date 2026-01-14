@@ -14,6 +14,7 @@ data/
 papers/
 output/
 plots/
+failed_pbs_scripts/
 
 # Object files
 *.o

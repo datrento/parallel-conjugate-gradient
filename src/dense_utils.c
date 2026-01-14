@@ -100,7 +100,7 @@ void get_corresponding_b_and_x0(double *A, double *b, double *x0, int n)
     // known solution x
     for (int i = 0; i < n; i++)
     {
-        x_known[i] = 1.0; // for simplicity, let's assume the known solution is a vector of ones
+        x_known[i] = 2.0; // for simplicity, let's assume the known solution is a vector of twos
         x0[i] = 0.0;      // initial guess x0 as zero vector
     }
     // initialize b

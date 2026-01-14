@@ -21,12 +21,6 @@ SOURCES = \
 	$(SRC_DIR)/utils.c \
 	$(SRC_DIR)/csr_matrix_builder.c
 
-# PBS script for job submission
-PBS_SCRIPT = run_single_rep.sh
-
-# Number of repetitions for benchmarking
-REPS ?= 3
-
 # Build options
 debug ?= 0
 omp ?= 0
@@ -74,39 +68,9 @@ print_config:
 	@echo "Binary Base: $(TARGET_BASE)"
 	@echo "Binary Pipe: $(TARGET_PIPE)"
 	@echo "============================"
-
-# Submit all repetition jobs
-submit_reps: compile
-	@echo "Submitting $(REPS) independent repetitions..."
-	@for rep in $$(seq 1 $(REPS)); do \
-		echo "Submitting repetition $$rep..."; \
-		qsub -v REP=$$rep $(PBS_SCRIPT) | tee $(LOGS_DIR)/job_id_rep_$$rep.txt; \
 		sleep 1; \
 	done
 	@echo "All $(REPS) repetitions submitted."
-
-# Trace all repetition jobs
-trace_reps:
-	@echo "Tracing repetition jobs:"
-	@for rep in $$(seq 1 $(REPS)); do \
-		if [ -f $(LOGS_DIR)/job_id_rep_$$rep.txt ]; then \
-			job_id=$$(cat $(LOGS_DIR)/job_id_rep_$$rep.txt); \
-			echo "=== Repetition $$rep (Job ID: $$job_id) ==="; \
-			tracejob $$job_id 2>/dev/null || echo "No trace available"; \
-		fi; \
-	done
-# Check status of all repetition jobs
-status_reps: 
-	@echo "Status of repetition jobs:"
-	@for rep in $$(seq 1 $(REPS)); do \
-		if [ -f $(LOGS_DIR)/job_id_rep_$$rep.txt ]; then \
-			job_id=$$(cat $(LOGS_DIR)/job_id_rep_$$rep.txt); \
-			echo "=== Repetition $$rep (Job ID: $$job_id) ==="; \
-			qstat $$job_id 2>/dev/null || echo "Job completed or not found"; \
-		fi; \
-	done
-my_jobs:
-	qstat -u $$USER
 
 # disable this in the cluster environment
 local_run: compile
@@ -118,4 +82,4 @@ clean:
 	rm -rf $(BUILD_DIR) $(LOGS_DIR)/* $(OUTPUT_DIR)/*
 	@echo "Cleaned build, logs, and output."
 
-.PHONY: all compile dirs clean submit_reps print_config trace_reps status_reps local_run compile_baseline compile_pipelined my_jobs 
+.PHONY: all compile dirs clean local_run compile_baseline compile_pipelined 

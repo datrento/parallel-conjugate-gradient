@@ -11,13 +11,47 @@
 #include <string.h>
 #include "config.h"
 
+/**
+ * Gathers the full CSR matrix from all processes to rank 0 for verification or output (used only for smaller grid and testing purposes).
+ * Parameters:
+ *      A_local: local CSR matrix
+ *      A_global: pointer to full CSR matrix (only allocated on rank 0)
+ *      comm: MPI communicator
+ * Returns: void
+ */
 __attribute__((unused)) static void mpi_gather_csr_to_root(CSR *A_local, CSR *A_global, MPI_Comm comm);
 
+/**
+ * Logs the solver performance metrics to stdout and to a file for performance analysis.
+ * Parameters:
+ *     rank: MPI rank of the calling process
+ *     size: Total number of MPI processes
+ *     grid_size: Size of the 3D grid (assumed cubic)
+ *     max_total_time: Maximum total time taken among all processes
+ *     min_total_time: Minimum total time taken among all processes
+ *     max_iter_time: Maximum iteration-only time taken among all processes
+ *     min_iter_time: Minimum iteration-only time taken among all processes
+ *     iters_done: Number of iterations performed
+ * Returns: None
+ */
 __attribute__((unused)) static void log_solver_performance_metrics(int rank, int size, int grid_size, double max_total_time, double min_total_time,
                                                                    double max_iter_time, double min_iter_time, int iters_done, double avg_iter_time, const char *alg_name);
 
 int main(int argc, char *argv[])
 {
+    /**
+     * Main function for the parallel Conjugate Gradient solver using MPI with z-slab decomposition.
+     * The program initializes MPI, sets up the 3D grid and local CSR matrix for each process,
+     * runs the Jacobi-preconditioned CG solvers (i.e Baseline JCG and Pipelined JCG), and gathers performance metrics.
+     * Parameters:
+     *      argc: Argument count
+     *      argv: Argument vector
+     * Returns: EXIT_SUCCESS on success, EXIT_FAILURE on error
+     *
+     * Note: The program expects the grid size as a command-line argument (optional).
+     * If not provided, a default grid size of 200 is used.
+     * max_iter and tol can also be provided as optional arguments.
+     **/
     // MPI
     int rank, size;
     MPI_Init(&argc, &argv);
@@ -241,7 +275,8 @@ int main(int argc, char *argv[])
 __attribute__((unused)) static void mpi_gather_csr_to_root(CSR *A_local, CSR *A_global, MPI_Comm comm)
 {
     /**
-     * Gather the full CSR matrix from all processes to rank 0.
+     * Gather the full CSR matrix from all processes to rank 0. Used for verification or output (only for smaller grids).
+     * Mostly used for exporting the full matrix to Matrix Market format for verification
      * Parameters:
      *      A_local: local CSR matrix
      *      A_global: pointer to full CSR matrix (only allocated on rank 0)
