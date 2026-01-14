@@ -1,3 +1,8 @@
+/**
+ * Functions for dense matrix generation and utilities (mainly for debugging / validation).
+ */
+
+
 #pragma once
 // Functions for dense matrix generation and utilities
 /**

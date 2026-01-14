@@ -1,3 +1,10 @@
+/**
+ * CSR data structures and sparse kernels used by the solvers.
+ * The MPI domain decomposition is along the z-axis (z-slab): each rank owns
+ * a contiguous set of xy-planes and exchanges halo planes with its z-neighbors.
+ */
+
+
 #pragma once
 #include <mpi.h>
 #include <stddef.h>
