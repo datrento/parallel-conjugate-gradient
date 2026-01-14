@@ -157,7 +157,8 @@ Or simply run:
 make local_run
 ```
 
-Both solvers take the following arguments: <N> <tolerance> <max_iterations>
+Both solvers take the following arguments:
+<Nx> <tolerance> <max_iterations>
 Example:
 ```bash
 mpirun -np 96 ./build/solver_baseline 512 1e-10 5000
@@ -208,7 +209,7 @@ Sample results and plots from experiments can be found in the `plots/` directory
 ### Communication vs Computation Breakdown
 
 <p align="center">
-  <img src="plots/comm_vs_comp_breakdown.pdf" alt="Communication vs Computation Breakdown" width="600"/>
+  <img src="plots/comm_vs_comp_breakdown.png" alt="Communication vs Computation Breakdown" width="600"/>
 </p>
 
 This plot shows the communication vs computation time breakdown for different solver variants and scaling scenarios.
